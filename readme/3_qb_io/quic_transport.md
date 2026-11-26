@@ -11,7 +11,7 @@
 QUIC in `qb-io` is transport infrastructure only. The layer owns UDP sockets, timers, connection-id routing, streams, stream credit, resets, stop-sending, datagrams, and typed lifecycle events. Request/response semantics such as HTTP/3 framing and QPACK belong to higher modules such as `qbm/http`, not to `qb-io`. The default Application-Layer Protocol Negotiation (ALPN) identifier is `h3`, so an endpoint is wired for HTTP/3 out of the box, but the transport itself carries opaque stream bytes.
 
 The feature is gated at build time, and it is worth being precise about *what* the gate removes. **The QUIC types always compile**: `quic.cpp` is unconditionally in the library's sources, all six headers are unconditional, and `use<_Derived>::quic` sits inside no `#ifdef` — unlike `use<>::tcp::ssl`. What `QB_HAS_QUIC` gates is the **native backend's body** and what `make_native_backend()` returns. An endpoint declared in a QUIC-off build compiles and links; `listen` or `connect` throws on a default endpoint with no backend, while a backend supplied through `set_backend()` bypasses that availability check. Branch on `qb::io::quic::available()` before **native** use, or on `QB_HAS_QUIC` at compile time — and note that `available()` is a compile-time constant: for whether the OpenSSL crypto helper actually initialised at process start, ask `qb::io::quic::native_backend_ready()`.
-<!-- src: qb/src/qb/io/CMakeLists.txt:85 (quic.cpp unconditional), qb/src/qb/io/async.h:147 (use<>::quic is not #ifdef'd), qb/src/qb/io/quic.cpp:1786-1793 (make_native_backend), qb/src/qb/io/async/quic/endpoint.h:99-109,421-427 (injected backend), qb/src/qb/io/quic/types.h:103 (available), :122 (native_backend_ready) -->
+<!-- src: qb/src/qb/io/CMakeLists.txt:85 (quic.cpp unconditional), qb/src/qb/io/async.h:147 (use<>::quic is not #ifdef'd), qb/src/qb/io/quic.cpp:1786-1793 (make_native_backend), qb/src/qb/io/async/quic/endpoint.h:99-109,437-443 (injected backend), qb/src/qb/io/quic/types.h:103 (available), :122 (native_backend_ready) -->
 
 ## Build
 
@@ -100,7 +100,7 @@ Three types carry the model.
 The **endpoint** (`qb::io::async::quic::endpoint`) is the reactor object. It owns the UDP socket, holds a `std::unique_ptr<qb::io::quic::backend>`, bridges the libev I/O watcher and **one** libev timer, flushes outbound packets, and dispatches backend events to virtual hooks. It is the only polymorphic class in `qb::io::async::quic` — it has a virtual destructor and virtual `dispatch(...)` overloads, while `stream`, `session_base`, `client`, `io_handler` and `stream_key` have none. (`qb::io::quic::backend` is polymorphic too, of course: it is the abstract engine contract described next.) The endpoint is **non-copyable and non-movable** — all four special member operations are deleted — so it must be held in place and cannot be relocated after construction.
 
 Two things it does *not* do, both easy to attribute to it and both one layer down: it does not arm the handshake or idle timeouts — those are ngtcp2 settings and transport parameters written by the backend, and the endpoint's single timer is armed from whatever `backend::next_timeout()` reports; and it does not route by connection id — it hands **every** datagram to `_backend->on_udp_datagram(...)` unrouted, and the DCID lookup happens inside the native backend.
-<!-- src: qb/src/qb/io/async/quic/endpoint.h:160-172 (the one timer, armed from next_timeout), :710 (every datagram goes to the backend unrouted); qb/src/qb/io/quic.cpp:921-925 (the server CID index lookup), :1108-1110 (handshake_timeout is an ngtcp2 setting), :1124-1126 (max_idle_timeout is a transport parameter) -->
+<!-- src: qb/src/qb/io/async/quic/endpoint.h:176-188 (the one timer, armed from next_timeout), :726 (every datagram goes to the backend unrouted); qb/src/qb/io/quic.cpp:921-925 (the server CID index lookup), :1108-1110 (handshake_timeout is an ngtcp2 setting), :1124-1126 (max_idle_timeout is a transport parameter) -->
 
 The **backend** (`qb::io::quic::backend`) is the abstract engine contract: `configure`, `start_server`, `start_client`, `on_udp_datagram`, `on_timeout`, `next_timeout`, `wants_write`, `drain_packets`, `drain_events`, the stream and datagram mutators, and `current_stats`. Per-connection RTT and listener admission are optional capabilities with default implementations. The shipped implementation drives libngtcp2 plus OpenSSL and is obtained through `qb::io::quic::make_native_backend()`. Custom backends are possible by implementing the contract and passing the instance to the endpoint constructor or `set_backend(...)`.
 
@@ -115,14 +115,14 @@ writer attempt due; direct callers must call `drain_packets()` to generate its o
 and writer-generated events therefore advance at that drain, rather than during the credit call.
 The endpoint generates and flushes packets, refreshes its statistics and readiness, and arms its timer
 before dispatching the received events.
-<!-- src: qb/src/qb/io/quic/backend.h:63-82; qb/src/qb/io/quic.cpp:585-602,422-437,440-466; qb/src/qb/io/async/quic/endpoint.h:222-255,587-604,710-725 -->
+<!-- src: qb/src/qb/io/quic/backend.h:63-82; qb/src/qb/io/quic.cpp:585-602,422-437,440-466; qb/src/qb/io/async/quic/endpoint.h:238-271,603-620,726-741 -->
 
 Receive counters and read callbacks update immediately. Sent-byte and sent-packet counters describe
 encoded packets and advance during packet generation, before the endpoint attempts UDP transmission.
 A `current_stats()` snapshot between receiving and draining can therefore precede generation of the
 pending output. During a credit-only endpoint handler, `stats().packets_sent` and `bytes_sent`
 also precede deferred credit encoding; the final packet drain refreshes that snapshot.
-<!-- src: qb/src/qb/io/quic/types.h:75-91; qb/src/qb/io/async/quic/endpoint.h:222-255,346-360 -->
+<!-- src: qb/src/qb/io/quic/types.h:75-91; qb/src/qb/io/async/quic/endpoint.h:238-271,362-376 -->
 
 A **stream session** (`qb::io::async::quic::client` / `detail::session_base`) is a logical, per-stream buffered session with its own protocol and in/out pipes. Unlike a TCP session, it is not a movable kernel socket. A TCP session owns one file descriptor and can be extracted and moved to another `io_handler`; a QUIC connection owns one UDP descriptor plus shared congestion, ACK/loss recovery, TLS, timer, and connection-id state for every stream it carries. Moving a single stream to another thread would split that shared state, so streams stay on the endpoint owner.
 
@@ -140,7 +140,7 @@ flowchart TB
 All streams of a connection stay on the endpoint owner — a QUIC stream is not extracted to another listener the way a TCP session is.
 
 **Dispatch is deliberately non-reentrant, and this is the property most likely to surprise a handler author.** A `send_stream_data` or `reset_stream` issued *from inside* a `dispatch(event::…)` handler re-enters `drain_backend_events`, which sets `_drain_events_again` and returns. `extend_stream_credit` sets that same flag directly. Freshly queued events are delivered after the current handler unwinds rather than nested inside it. The header calls the alternative "the root of a whole class of UAF / buffer-underflow bugs" — `event::stream_data::payload` is a `std::string_view` into the very vector a nested drain would be refilling. Calling the mutators from a handler is correct and supported; expecting their events *before* your handler returns is not.
-<!-- src: qb/src/qb/io/async/quic/endpoint.h:259-296 (the guard), :346-361 (the re-drain), :329 (payload is a view into the event vector) -->
+<!-- src: qb/src/qb/io/async/quic/endpoint.h:275-312 (the guard), :362-377 (the re-drain), :345 (payload is a view into the event vector) -->
 
 ### Endpoint affinity
 
@@ -209,7 +209,7 @@ Not every field is wired in the shipped backend. The verified enforcement points
 
 - The transport-parameter fields (`max_stream_data_*`, `connection_recv_window` → `initial_max_data`, `max_streams_bidi`, `max_streams_uni`, `max_datagram_frame_size`) are written into the ngtcp2 transport parameters when the connection starts — `max_datagram_frame_size` only when `enable_datagrams` is set, otherwise the parameter goes on the wire as `0`. <!-- src: qb/src/qb/io/quic.cpp:1118-1128 (make_transport_params), :1128 (max_datagram_frame_size, gated on enable_datagrams) -->
 - `max_pending_stream_bytes` / `max_pending_stream_frames` and `max_pending_datagram_bytes` / `max_pending_datagram_frames` are enforced inside the native backend; overrunning a pending queue closes the connection with `disconnect_reason::buffer_overflow`. A stream queue's overrun also tells the peer, with a transport CONNECTION_CLOSE carrying INTERNAL_ERROR (`0x1`), qb's own failure, never that enum's value (3.4, Huly QB-1275: the enum cast onto the wire went out as an application close with code `0`); a datagram queue's closes locally only, as the datagram section below says. <!-- src: qb/src/qb/io/quic.cpp:553-558 -->
-- `udp_rx_batch_size` and `udp_tx_batch_size` are enforced by the endpoint's UDP read and write loops, not the backend; a value of `0` means an unbounded batch. <!-- src: qb/src/qb/io/async/quic/endpoint.h:193 (udp_tx_batch_size), :686 (udp_rx_batch_size) -->
+- `udp_rx_batch_size` and `udp_tx_batch_size` are enforced by the endpoint's UDP read and write loops, not the backend; a value of `0` means an unbounded batch. <!-- src: qb/src/qb/io/async/quic/endpoint.h:209 (udp_tx_batch_size), :702 (udp_rx_batch_size) -->
 
 `enable_stateless_retry` (default on) performs **address validation via Retry** (RFC 9000 §8.1): the server answers a first Initial with a Retry packet carrying an address-bound token and allocates **no** connection state (`send_retry(...); return nullptr;`). Only once the client re-sends its Initial echoing a token that passes `ngtcp2_crypto_verify_retry_token` does the server construct the child connection. This defends against off-path spoofed-Initial floods. (`ngtcp2_accept` itself runs on **both** datagrams — it is what parses the header so the token can be tested for absence in the first place.) <!-- src: qb/src/qb/io/quic.cpp:966 (ngtcp2_accept), :971 (tokenlen == 0), :973-974 (send_retry, no state), :980-985 (verify_retry_token), :991-998 (the child connection) -->
 
@@ -241,7 +241,7 @@ With id `0`, it selects the client's connection or a server's sole connected pee
 unknown/closing peer, or an ambiguous server selection produces no value. The native backend reads that
 connection's ngtcp2 estimate; the server statistic `current_stats().smoothed_rtt_us` remains the maximum
 across its live children and is not substituted for a missing peer estimate.
-<!-- src: qb/src/qb/io/async/quic/endpoint.h:398-402 (smoothed_rtt); qb/src/qb/io/quic.cpp:700-737 (aggregate and per-connection RTT) -->
+<!-- src: qb/src/qb/io/async/quic/endpoint.h:414-418 (smoothed_rtt); qb/src/qb/io/quic.cpp:700-737 (aggregate and per-connection RTT) -->
 
 `endpoint::set_accepting_connections(false)` asks a live listener to refuse new handshakes without closing
 its established peers. Check the returned boolean: the native backend accepts this control only for a
@@ -250,7 +250,7 @@ check. An admissible new Initial receives at most one stateless CONNECTION_REFUS
 the incoming datagram's byte size; malformed/unsupported input and crypto failures produce no response.
 This branch creates no retained native child connection or TLS session, though packet and crypto work
 may allocate transient storage. Passing `true` enables admission again.
-<!-- src: qb/src/qb/io/async/quic/endpoint.h:403-406 (set_accepting_connections); qb/src/qb/io/quic.cpp:740-745 (capability check), :829-851 (stateless refusal), :908-932 (known-CID routing), :934-940 (cold admission/refusal) -->
+<!-- src: qb/src/qb/io/async/quic/endpoint.h:419-422 (set_accepting_connections); qb/src/qb/io/quic.cpp:740-745 (capability check), :829-851 (stateless refusal), :908-932 (known-CID routing), :934-940 (cold admission/refusal) -->
 
 Both backend capabilities have non-pure defaults: `smoothed_rtt` returns `nullopt` and
 `set_accepting_connections` returns `false`. Existing custom backend source can keep those defaults;
@@ -258,7 +258,7 @@ the caller must explicitly select its fallback when a capability is unavailable.
 backend returns the same defaults and does not create one just for these calls. Rebuild custom backend
 implementations and consumers for the extended vtable under the existing
 [binary compatibility policy](../../VERSIONING.md#binary-compatibility).
-<!-- src: qb/src/qb/io/quic/backend.h:84-88 (optional capabilities); qb/src/qb/io/quic.cpp:1761-1769 (default implementations); qb/src/qb/io/async/quic/endpoint.h:398-406 (no-backend defaults) -->
+<!-- src: qb/src/qb/io/quic/backend.h:84-88 (optional capabilities); qb/src/qb/io/quic.cpp:1761-1769 (default implementations); qb/src/qb/io/async/quic/endpoint.h:414-422 (no-backend defaults) -->
 
 ### Connection migration
 
@@ -280,7 +280,7 @@ Active migration is enabled at the transport-parameter level (`disable_active_mi
 <!-- src: qb/src/qb/io/quic/types.h:68-73 -->
 
 A server requires `certificate_file` and `private_key_file`. For a client, `verify_peer` validates the certificate chain, but chain validation alone accepts any CA-trusted certificate for any host. The backend binds OpenSSL hostname verification only when `verify_peer` is true **and** `server_name` is set: an IP literal through `X509_VERIFY_PARAM_set1_ip_asc`, any other name through `X509_VERIFY_PARAM_set1_host` (what `SSL_set1_host`, deprecated by OpenSSL 4.0, did), and a name OpenSSL refuses to install fails the handshake rather than leaving the chain check alone — OpenSSL 4.0 validates it (no single-character name, no label over 63 bytes, no trailing dot). **Every `connect` overload fills `server_name` from the URI host when it is empty** — the `tls_config` one included, since it takes its config by value and mutates the copy — so a hand-built `tls_config` still gets hostname verification. What defeats it is a `server_name` you set to something *wrong*, one you cleared deliberately, or a URI with no host at all.
-<!-- src: qb/src/qb/io/async/quic/endpoint.h:507-508 (server_name filled when empty); qb/src/qb/io/quic.cpp:1084-1092 (X509_VERIFY_PARAM_set1_host gated on verify_peer + server_name, fail closed) -->
+<!-- src: qb/src/qb/io/async/quic/endpoint.h:523-524 (server_name filled when empty); qb/src/qb/io/quic.cpp:1084-1092 (X509_VERIFY_PARAM_set1_host gated on verify_peer + server_name, fail closed) -->
 
 <!-- src: qb/src/qb/io/quic.cpp:1084-1092 -->
 
@@ -297,7 +297,7 @@ its first connection. The snippets below are the same shapes, trimmed.
 ### Server
 
 ```cpp
-// src: qb/tests/io/system/quic/quic-handshake.cpp:830-834 (stream session), :841 (listen), :1111 (server) (shape)
+// src: qb/tests/io/system/quic/quic-handshake.cpp:834-838 (stream session), :845 (listen), :1115 (server) (shape)
 #include <qb/io/async.h>
 
 // The per-stream session: a buffered session with its own protocol pipe.
@@ -328,12 +328,16 @@ void run_server(Server& server) {
 
 `listen(bind_uri, cert_file, key_file, alpn_protocols = {"h3"})` binds the UDP socket, configures the backend, starts the server role, registers the I/O and timer watchers, and drains the first batch of packets. It returns `false` if the bind fails.
 
-<!-- src: qb/src/qb/io/async/quic/endpoint.h:441-462 -->
+Both roles turn broadcast off on the socket they bind: `qb::io::udp::socket::init()` asks every socket it opens for it (`SO_BROADCAST`), and QUIC runs between two hosts. A client given a broadcast address therefore cannot start -- the system refuses its first datagram at once, and the endpoint delivers that close inside its own `connect()` --, where Linux and Windows sent its Initial to every host of the local network (3.4, Huly QB-1246).
+
+<!-- src: qb/src/qb/io/async/quic/endpoint.h:171-174 (configure_socket), :463, :521; qb/src/qb/io/udp/socket.cpp:90; qb/tests/io/system/quic/quic-handshake.cpp:1236-1265 -->
+
+<!-- src: qb/src/qb/io/async/quic/endpoint.h:457-478 -->
 
 ### Client
 
 ```cpp
-// src: qb/tests/io/system/quic/quic-handshake.cpp:918-924 (shape), :1120 (connector)
+// src: qb/tests/io/system/quic/quic-handshake.cpp:922-928 (shape), :1124 (connector)
 #include <qb/io/async.h>
 
 class Client : public qb::io::use<Client>::quic::connector<StreamSession> {
@@ -364,7 +368,7 @@ address, and keep the original hostname in `tls.server_name` for certificate ver
 documentation address above is a placeholder; replace it with the resolved peer address.
 
 > **Do not open a stream before `event::connected`.** `connect()` returns as soon as the endpoint reaches `state::connecting`; the peer's `initial_max_streams_bidi` has not arrived yet, so `ngtcp2_conn_open_bidi_stream` answers `NGTCP2_ERR_STREAM_ID_BLOCKED` — and the backend turns **any** non-zero ngtcp2 return into `throw std::runtime_error("ngtcp2 stream open failed with …")`. Every stream-opening call site in the test suite opens only after reaching `connected`. Drive it from the `event::connected` hook, or pump the loop until the endpoint reports `connected` before opening.
-> <!-- src: qb/src/qb/io/async/quic/endpoint.h:511 (connect returns at state::connecting), :526-529 (open_bidirectional_stream); qb/src/qb/io/quic.cpp:539-540 (the throw); qb/tests/io/system/quic/quic-handshake.cpp:881 (establish_loopback pumps to connected), :887 (then opens) -->
+> <!-- src: qb/src/qb/io/async/quic/endpoint.h:527 (connect returns at state::connecting), :542-545 (open_bidirectional_stream); qb/src/qb/io/quic.cpp:539-540 (the throw); qb/tests/io/system/quic/quic-handshake.cpp:885 (establish_loopback pumps to connected), :891 (then opens) -->
 
 `connect(remote_uri, alpn_protocols = {"h3"})`, its `tls_config` overload, and a third
 `connect(uri, std::initializer_list<std::string>)` disambiguator all init and bind a local UDP
@@ -379,11 +383,11 @@ all — a braced list is otherwise ambiguous against the `tls_config` overload. 
 `tls_config` therefore still gets hostname verification; the risk to watch for is a *wrong* or
 deliberately cleared `server_name`, or a URI with no host, not a forgotten one.
 
-<!-- src: qb/src/qb/io/async/quic/endpoint.h:464-469 (the no-tls_config overload), :484-487 (the initializer_list disambiguator), :490-519 (the tls_config overload), :507-508 (server_name filled from the URI host) -->
+<!-- src: qb/src/qb/io/async/quic/endpoint.h:480-485 (the no-tls_config overload), :500-503 (the initializer_list disambiguator), :506-535 (the tls_config overload), :523-524 (server_name filled from the URI host) -->
 <!-- src: qb/src/qb/io/quic.cpp:40-52 (make_wire_alpn), :44-45 (the 1..255 throw), :49-50 (the at-least-one throw), :149-157 (alpn_select_cb: no shared ALPN is a fatal alert), :1724-1729 (the client's check, the same alert), :1084-1092 (hostname verification) -->
 
 After `close()` stops the UDP watcher and closes the socket, `connect()` or `listen()` refreshes a native backend the endpoint created itself. A backend supplied through the constructor or `set_backend(...)` stays under the caller's control. The next connection binds the existing watcher to its new socket descriptor and starts it, so the listener receives packets from that attempt. `close()` does not arm the endpoint's timer on the way: it holds it aside while the backend closes, so an endpoint kept in static storage -- an HTTP/3 client, a server -- which its destructor closes after its thread's event loop, writes nothing into the loop that is gone (3.4, Huly QB-1246).
-<!-- src: qb/src/qb/io/async/quic/endpoint.h:99-136,421-427,440-462,489-519,651-679; qb/tests/io/system/quic/quic-endpoint-loop.cpp:283-304 -->
+<!-- src: qb/src/qb/io/async/quic/endpoint.h:99-136,437-443,456-478,505-535,667-695; qb/tests/io/system/quic/quic-endpoint-loop.cpp:283-304 -->
 
 ### Streams and protocols
 
@@ -422,7 +426,7 @@ that peer's real connection id, so the later flush, FIN and single-argument send
 `std::runtime_error` when the server has no connected peer or several — name the connection then, from
 `event::connected::connection_id`. A send, reset, stop, credit or close addressed to `0` with no sole peer reaches no
 connection, exactly like one addressed to a connection that has closed.
-<!-- src: qb/src/qb/io/async/quic/endpoint.h:90-97 (connection_for), :731-741 (open_stream resolves, then throws), :300-315 (the connected peers follow connected / connection_closed) -->
+<!-- src: qb/src/qb/io/async/quic/endpoint.h:90-97 (connection_for), :747-757 (open_stream resolves, then throws), :316-331 (the connected peers follow connected / connection_closed) -->
 
 ## Lifecycle events
 
@@ -451,11 +455,11 @@ Stopping only the read side leaves the bidirectional stream's write side active.
 
 Server-side and client-side close semantics differ. A `connection_closed` carrying connection id `0` (or any client) sets the endpoint's `_open` flag to false, which means the whole endpoint is down. For a server child connection it only downgrades the endpoint state to `listening` or `connected` and keeps the listener open.
 
-<!-- src: qb/src/qb/io/async/quic/endpoint.h:306-315 -->
+<!-- src: qb/src/qb/io/async/quic/endpoint.h:322-331 -->
 
 > **Borrowed payloads.** The `payload` on `event::stream_data` and `event::datagram` is a `std::string_view` into the backend's drain buffer. It is valid only for the duration of the dispatch call. Copy the bytes if you need to retain them.
 
-<!-- src: qb/src/qb/io/async/quic/endpoint.h:329, :342 (payload string_view over the drain buffer) -->
+<!-- src: qb/src/qb/io/async/quic/endpoint.h:345, :358 (payload string_view over the drain buffer) -->
 
 ## Flow control and datagrams
 
@@ -476,7 +480,7 @@ credit obligation for the attached backend and arms a writable retry while the s
 Replacing the backend clears the old obligation. This does not replay an aborted event batch or
 guarantee progress under persistent memory exhaustion.
 
-<!-- src: qb/src/qb/io/async/quic/endpoint.h:566-579,346-360 (extend_stream_credit + batch drain), :222-255,283-296 (credit retry), :112-117,422-427 (backend replacement); qb/src/qb/io/async/quic/io_handler.h:259-269 (automatic credit), qb/src/qb/io/async/quic/server.h:124-126 (the server facade wires it) -->
+<!-- src: qb/src/qb/io/async/quic/endpoint.h:582-595,362-376 (extend_stream_credit + batch drain), :238-271,299-312 (credit retry), :112-117,438-443 (backend replacement); qb/src/qb/io/async/quic/io_handler.h:259-269 (automatic credit), qb/src/qb/io/async/quic/server.h:124-126 (the server facade wires it) -->
 
 Outbound, the writer offers ngtcp2 the oldest chunk of a stream that may take data, then the queued
 DATAGRAMs, then control frames alone. A stream ngtcp2 refuses for lack of its own credit is set aside
@@ -504,9 +508,9 @@ A stream-session read-buffer overflow is fatal to the stream. Appending past `ma
 ## Pitfalls
 
 - **The endpoint cannot be moved.** All copy and move operations are deleted. Construct it in place and hold it by pointer or reference; never store it in a container that relocates its elements.
-  <!-- src: qb/src/qb/io/async/quic/endpoint.h:372-375 -->
+  <!-- src: qb/src/qb/io/async/quic/endpoint.h:388-391 -->
 - **Native QUIC requires a backend.** `ensure_backend()` throws `std::runtime_error` when no backend is installed and native QUIC is unavailable; an injected backend is accepted. It is called by `listen`, the `connect` overloads, `open_bidirectional_stream`, `open_unidirectional_stream`, `send_stream_data`, `reset_stream`, `stop_stream` and `send_datagram`. With no backend, `extend_stream_credit` and `close_connection` return without work. `close()` is different: it still stops its watchers, closes an open socket and marks the endpoint closed; only backend shutdown is conditional. Guard native use with `available()` or `QB_HAS_QUIC` rather than relying on a throw.
-  <!-- src: qb/src/qb/io/async/quic/endpoint.h:99-109 (ensure_backend), :566-568 (extend_stream_credit no-op), :631-633 (close_connection no-op), :652-679 (close cleanup) -->
+  <!-- src: qb/src/qb/io/async/quic/endpoint.h:99-109 (ensure_backend), :582-584 (extend_stream_credit no-op), :647-649 (close_connection no-op), :668-695 (close cleanup) -->
   <!-- src: qb/src/qb/io/quic.cpp:1786-1793 -->
 - **Borrowed event payloads do not outlive the dispatch.** Copy `event::stream_data.payload` / `event::datagram.payload` before returning from the handler.
 - **Do not open a stream before `event::connected`.** `connect()` returns while the handshake is still in flight, and opening then throws `std::runtime_error` from the backend.

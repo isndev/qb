@@ -938,6 +938,16 @@ policy.
 
 ### Fixed
 
+- **A QUIC endpoint's socket no longer asks for broadcast (Huly QB-1246).** `qb::io::udp::socket::init()` sets
+  `SO_BROADCAST` on every socket it opens, and the endpoint's was one. QUIC runs between two hosts: a client endpoint
+  given a broadcast address -- `255.255.255.255`, a subnet's broadcast -- sent its Initial to every host of the local
+  network on Linux and Windows, which send it once the socket has asked (seven retransmissions measured on Linux), and
+  waited for its handshake timeout; macOS refused it. `listen()` and `connect()` now turn broadcast off on the socket
+  they bind (`configure_socket()`): the system refuses that first datagram at once (`EACCES`, `WSAEACCES`), and the
+  client endpoint delivers that close inside its own `connect()`, as for any address it cannot reach -- on every
+  platform. A server never picks a destination, it answers the address a datagram came from: its socket does not ask
+  for broadcast either. Three HTTP/3 client cases of qbm-http, written on macOS against an address "the network refuses
+  at once", waited for their connect timeout on Linux.
 - **`start()` and `reset_io_state()` no longer lower the dispatch flag under the read pass that is running (Huly
   QB-1278).** `_on_message`, the flag the slicing loop raises while it dispatches, is also the guard that keeps the
   loop from dispatching a component under its own `onMessage()`, what makes `clear_protocols()` retire, and what

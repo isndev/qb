@@ -99,7 +99,7 @@ Some qb-io suites exist only when their optional dependency is present:
 
 <!-- src: qb/tests/io/unit/CMakeLists.txt:76-147,150,217-218 -->
 
-Without the corresponding library these suites are not configured at all — they do not appear as skipped, they do not exist. QUIC has two registration shapes: `quic-endpoint-loop` requires `quic ssl network` and is absent without QUIC, while `quic-handshake` requires only `network` (`qb/tests/io/system/CMakeLists.txt:93-94`). The latter runs its negative availability cases when `QB_HAS_QUIC` is absent (`qb/tests/io/system/quic/quic-handshake.cpp:94-106`). Some multi-core core tests require more than one hardware thread; their cases skip on a single-core host (`qb/tests/core/system/engine/main-lifecycle.cpp:175-178`).
+Without the corresponding library these suites are not configured at all — they do not appear as skipped, they do not exist. QUIC has two registration shapes: `quic-endpoint-loop` requires `quic ssl network` and is absent without QUIC, while `quic-handshake` requires only `network` (`qb/tests/io/system/CMakeLists.txt:93-94`). The latter runs its negative availability cases when `QB_HAS_QUIC` is absent (`qb/tests/io/system/quic/quic-handshake.cpp:98-110`). Some multi-core core tests require more than one hardware thread; their cases skip on a single-core host (`qb/tests/core/system/engine/main-lifecycle.cpp:175-178`).
 
 ### Build contracts
 

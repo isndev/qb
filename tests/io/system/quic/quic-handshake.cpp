@@ -71,6 +71,10 @@
 #ifdef QB_HAS_QUIC
 #include <ngtcp2/ngtcp2.h>
 #endif
+#if !defined(_WIN32)
+#include <netinet/in.h>
+#include <sys/socket.h>
+#endif
 
 #include "../../shared/coroutine_test_support.h"
 #include "../../shared/quic_test_doubles.h"
@@ -1180,6 +1184,83 @@ TEST(QuicHandshakeLoopback, GracefulCloseDeliversTypedDisconnectReasonToClient) 
     EXPECT_NE(server.last_close_reason, qb::io::quic::disconnect_reason::none) << "the close must carry a typed disconnect reason";
 
     server.close();
+    qb::io::async::listener::current.clear();
+}
+
+namespace quic_unicast_test {
+
+/// Whether the UDP socket of this process bound to @p port asks for broadcast (SO_BROADCAST): 1 or 0, -1 when no such
+/// socket is found. POSIX: a descriptor is a small integer, so every one of them is asked.
+int
+broadcast_of_udp_socket_bound_to([[maybe_unused]] std::uint16_t port) {
+#if defined(_WIN32)
+    return -1;
+#else
+    for (int fd = 0; fd < 4096; ++fd) {
+        int       type = 0;
+        socklen_t size = sizeof type;
+        if (::getsockopt(fd, SOL_SOCKET, SO_TYPE, &type, &size) != 0 || type != SOCK_DGRAM)
+            continue;
+        sockaddr_storage local{};
+        socklen_t        length = sizeof local;
+        if (::getsockname(fd, reinterpret_cast<sockaddr *>(&local), &length) != 0)
+            continue;
+        std::uint16_t bound = 0;
+        if (local.ss_family == AF_INET)
+            bound = ntohs(reinterpret_cast<sockaddr_in const &>(local).sin_port);
+        else if (local.ss_family == AF_INET6)
+            bound = ntohs(reinterpret_cast<sockaddr_in6 const &>(local).sin6_port);
+        if (bound != port)
+            continue;
+        int on = 0;
+        size   = sizeof on;
+        if (::getsockopt(fd, SOL_SOCKET, SO_BROADCAST, &on, &size) != 0)
+            return -1;
+        return on != 0 ? 1 : 0;
+    }
+    return -1;
+#endif
+}
+
+} // namespace quic_unicast_test
+
+/**
+ * @test A QUIC endpoint never asks for broadcast: a client given the broadcast address cannot start (Huly QB-1246)
+ * @brief qb::io::udp::socket::init() asks every socket it opens for broadcast (SO_BROADCAST), the endpoint's included.
+ *        A client endpoint given 255.255.255.255 then sent its Initial to every host of the local network on Linux and
+ *        Windows -- seven retransmissions measured on Linux -- and waited for its handshake timeout; macOS refused it.
+ *        The endpoint turns broadcast off on its socket: the system refuses that first datagram at once (EACCES,
+ *        WSAEACCES), and the endpoint delivers the close inside its own connect(), as for any address it cannot reach.
+ *        A server's socket does not ask for it either: it answers the address a datagram came from (read on POSIX).
+ */
+TEST(QuicHandshakeLoopback, AnEndpointNeverAsksForBroadcast) {
+    ASSERT_TRUE(require_ssl_files()) << "QUIC build ships its TLS certs; their absence is a packaging regression";
+
+    qb::io::async::init();
+
+    {
+        CallbackQuicClient       client;
+        qb::io::quic::tls_config tls;
+        tls.server_name = "localhost";
+        tls.verify_peer = false;
+        ASSERT_TRUE(client.connect(qb::io::uri{"quic://255.255.255.255:4433"}, tls, {"h3"})) << "no socket was opened and bound";
+        EXPECT_EQ(client.closed, 1) << "the first datagram left for every host of the network: the socket asked for broadcast";
+        EXPECT_EQ(client.last_close_reason, qb::io::quic::disconnect_reason::transport_error);
+        EXPECT_EQ(client.current_state(), qb::io::async::quic::endpoint::state::closed);
+        client.close();
+    }
+
+    {
+        CallbackQuicServer server;
+        ASSERT_TRUE(server.listen(qb::io::uri{"quic://127.0.0.1:0"}, ssl_resource_path("cert.pem"), ssl_resource_path("key.pem"), {"h3"}));
+        ASSERT_GT(server.local_endpoint().port(), 0);
+#if !defined(_WIN32)
+        EXPECT_EQ(quic_unicast_test::broadcast_of_udp_socket_bound_to(server.local_endpoint().port()), 0)
+            << "the server's socket asks for broadcast (1), or was not found (-1)";
+#endif
+        server.close();
+    }
+
     qb::io::async::listener::current.clear();
 }
 

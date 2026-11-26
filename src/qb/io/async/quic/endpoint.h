@@ -157,6 +157,22 @@ protected:
         }
     }
 
+    /**
+     * @brief The socket of this endpoint, once bound: non-blocking, and never a broadcaster (Huly QB-1246).
+     * @details qb::io::udp::socket::init() asks every socket it opens for broadcast (SO_BROADCAST). QUIC runs between two
+     *          hosts: a client endpoint given a broadcast address sent its Initial to every host of the local network --
+     *          on Linux and Windows, which send it once the socket has asked; macOS refused it -- and waited for its
+     *          handshake timeout. Turned off, the system refuses that first datagram at once (EACCES, WSAEACCES), and
+     *          the endpoint delivers that close inside its own connect(), as for any address it cannot reach. A server
+     *          never picks a destination -- it answers the address a datagram came from --: turned off there too, it
+     *          can never answer one with a broadcast.
+     */
+    void
+    configure_socket() {
+        _socket.set_nonblocking(true);
+        static_cast<void>(_socket.set_broadcast(false));
+    }
+
     void
     arm_timer() {
         if (!_backend || !_timer_event)
@@ -444,7 +460,7 @@ public:
         ensure_backend();
         if (_socket.bind(bind_uri) != 0)
             return false;
-        _socket.set_nonblocking(true);
+        configure_socket();
         _local_endpoint = _socket.local_endpoint();
         qb::io::quic::tls_config tls;
         tls.certificate_file = cert_file;
@@ -502,7 +518,7 @@ public:
         bind_any.as_in(remote.af() == AF_INET ? "0.0.0.0" : "::", 0);
         if (_socket.bind(bind_any) != 0)
             return false;
-        _socket.set_nonblocking(true);
+        configure_socket();
         _local_endpoint = _socket.local_endpoint();
         if (tls.server_name.empty())
             tls.server_name.assign(remote_uri.host());
