@@ -639,9 +639,12 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   -> qb::io::async::task<void> { ctx.push_to<Order>(desk, 7); auto f = co_await qb::test::expect<Filled>(ctx, probe, 1s);
   ... }); EXPECT_TRUE(run) << run.describe();`. The probe is the DESTINATION handed to the actors under test (an event
   sent to the driver is not recorded); `expect` yields `std::optional<E>`, `expect_none` a bool, both bounded by a
-  deadline. In the scenario use `EXPECT_*`, never `ASSERT_*` (it `return`s; a coroutine cannot). A scenario that
-  `qb::ask`s another actor names the exchange: `kit.run<Quote>(...)`, else the reply is a dead letter and the ask
-  times out. One run per kit; `Main::stop()` is process-wide, so one kit at a time (Huly QB-57).
+  deadline on the PROBE's clock, the only one: the asker times nothing, so a stalled host delays the probe's answer
+  and never stands in for it; a probe that is gone -- killed, ended, or never one -- throws
+  `qb::test::probe_gone_error`, never an answer. In the scenario use `EXPECT_*`, never `ASSERT_*` (it `return`s; a
+  coroutine cannot). A scenario that `qb::ask`s another actor names the exchange: `kit.run<Quote>(...)`, else the
+  reply is a dead letter and the ask times out. One run per kit; `Main::stop()` is process-wide, so one kit at a
+  time (Huly QB-57).
 - **Discovery** — `require<Target>()`; handle `qb::RequireEvent` and gate on `is<Target>(event)`.
   The default `on(qb::RequireEvent&)` already routes replies to a pending `co_await qb::ping`/
   `qb::require` through `resolve_require(e)`, so the coroutine form needs no boilerplate — but if

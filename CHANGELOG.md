@@ -195,13 +195,14 @@ policy.
   yields the next recorded `E` as a `std::optional<E>` -- at once when one waits, else the first to arrive -- and
   `qb::test::expect_none<E>(ctx, probe, window)` is true when none arrived, consuming nothing. Both are a `qb::ask` of
   the probe through one non-template exchange, so a probe may live on any core and one driver serves every probe; the
-  exchanges a scenario asks other actors with are named to `run<Asks...>()`. A timeout is a lower bound (the probe
-  answers at its deadline); nothing is dropped -- an event handed to an expectation is lent until the scenario
-  acknowledges it, an expectation the scenario abandons (the losing branch of a `when_any`, an ask that timed out
-  first) is withdrawn as its frame ends, what it was lent going back to its place in the queue at once, and the probe
-  watches every asker, so a killed one's waiters and loans are let go of the same way; an expectation of a type the
-  probe does not record throws `std::logic_error`. Header-only and additive; no test framework required (the kit's own
-  tests use GoogleTest). New guide `readme/6_guides/testing_actors.md`. Proven by `qb-core-test-system-testkit` (27
+  exchanges a scenario asks other actors with are named to `run<Asks...>()`. A timeout is a lower bound, on the
+  probe's clock, the only one (the probe answers at its deadline, and the asker times nothing); nothing is dropped --
+  an event handed to an expectation is lent until the scenario acknowledges it, an expectation the scenario abandons
+  (the losing branch of a `when_any`) is withdrawn as its frame ends, what it was lent going back to its place in the
+  queue at once, and the probe watches every asker, so a killed one's waiters and loans are let go of the same way;
+  an expectation of a type the probe does not record throws `std::logic_error`, and one of a probe that is gone
+  `qb::test::probe_gone_error`. Header-only and additive; no test framework required (the kit's own tests use
+  GoogleTest). New guide `readme/6_guides/testing_actors.md`. Proven when it landed by `qb-core-test-system-testkit` (27
   cases: the FIFO and the sender, a timeout, a late arrival kept, `expect_none`, two waiters oldest first, a probe on
   another core, the wrong probe, `run<Asks...>` and the timeout without it, a throwing scenario, the watchdog, a
   failed start, one run per kit, an abandoned expectation and an acknowledged one, the withdrawals, a killed asker's
@@ -937,6 +938,75 @@ policy.
   free it after the loop, or stop it first. Nothing in qb, the modules or the examples frees one started (audited).
 
 ### Fixed
+
+- **`qb::test::expect` and `expect_none` return the probe's answer, never a timeout of their own (Huly QB-57).** The
+  two asked the probe with a deadline of their own -- the probe's wait plus a grace of 250 ms -- and read its expiry
+  as an answer: `expect_none` returned `false`, "an event arrived", and `expect` an empty optional, "none did". On a
+  host that stalled past the wait plus the grace, the probe's timer and that deadline came due in one pass of the
+  core, which checks its request deadlines before it runs its timers and reads its mailbox: the timeout ran first, and
+  a quiet window answered late by a live probe was read as an arrival, an event the probe held as none. Seen on the
+  Windows lane (`TestKit.TheAnswerToTheProbesOwnWatchIsNotRecorded`, 994 ms for a case of 300). On an M4, with the
+  process stopped 400 to 700 ms at a time, 50 to 250 ms apart, seven of the kit's 27 cases failed -- 10 to 15 runs in
+  24 each on one measure, six of them 8 to 20 on a reviewer's, and 48 in 48 for the shortest once a stop landed inside
+  it -- and none in 48 once fixed; stops of 20 to 120 ms and 48 parallel copies never showed it, a stall has to
+  outlast the timeout it is meant to beat. The probe's clock is now the only one: the asker sets no deadline
+  (`qb::ask` with no timeout) and returns what the probe answers, however late a stalled host delivers it. The window
+  stays what it was, wall time on the probe's core: an event that did not exist yet when it ended may be late, as with
+  any timeout. An asker that waits for the probe alone must never ask an id nothing answers from, and must never take
+  a probe that is gone for an answer: `expect` and `expect_none` throw `qb::test::probe_gone_error` (new), since a
+  test asserts "arrived" or "none" and no return value is safe for both. The kit keeps a census of the probes of the
+  process (`detail::probe_census`): a `TestKit` announces a probe as it adds it, a probe enters it in its constructor
+  otherwise, and `expect` reads it before it sends -- it throws at once for an id no live probe holds, a probe that
+  ended or an id that never was one's, which the kit cannot tell apart. A probe's id is its engine's own and nothing
+  an expectation can read names its engine, so the census holds one probe per id: a second -- a probe of another kit,
+  or of another engine, alive in the same process -- throws `std::logic_error` where it is added or built, where it
+  used to be taken for the first, and to refuse its expectations when either ended (an independent review's measure: 5
+  runs in 5). An announcement is its kit's alone -- a probe says which kit adds it -- so a probe another engine builds
+  at an announced id does not take it, and a kit's driver is known by its id and its thread, so an actor of another
+  engine at that id is not taken for it. A probe that a `qb::KillEvent` ends closes in the census, tells the
+  expectations waiting on it, and stays up until the ones already sent have arrived and been told the same, or their
+  asker is gone: the census counts each as it departs, by asker, and the probe watches the askers it waits for. A
+  probe on a core that stops on an exception out of a handler can say nothing, that core's pipes are not flushed --
+  and an expectation that times nothing then waited for the watchdog, ten seconds by default where the old deadline
+  gave up after 350 ms (the same review). The kit's driver now watches every probe its scenario expects on: a watch is
+  answered when a core stops, behind everything that core had sent, and the scenario's expectations on that probe
+  throw `probe_gone_error` then. An asker that is not the kit's driver is not told, and waits: the kit requires
+  `qb::DownEvent` of no actor but its own. A probe stopped with its engine says nothing, its askers stop with it: an
+  answer from its destructor was tried, and it reached a driver the same stop had reaped -- a dead letter of the kit's
+  own exchange in every run a watchdog ended -- while a scenario whose core read it first was reported as having
+  thrown it. The next `expect` on a probe that ended throws at once. A probe that records `qb::KillEvent` records the
+  ones it is sent, as before. The probe's own clock had a hole of the same kind. Its deadline is a reminder it sends
+  itself, and a core reads what it sent itself before what the other cores sent it: after a stall of the probe's core,
+  an event that had waited in its mailbox since before the window ended was recorded after the probe had answered
+  "none" -- 20 runs in 20 with that core held by the scenario, 27 in 30 under a stall of that thread alone (an
+  independent review's measure). The reminder now comes round twice and is answered on its second lap, behind what the
+  mailbox held for the probe. `detail::reply_grace` and the kit's `detail::add_saturating` are gone. Thirty-one cases
+  join `qb-core-test-system-testkit` (61). Two hold the probe's core in a handler for 600 ms once the window runs,
+  under an `expect_none` of 100 ms, on the asker's core and on another; one holds the asker's ahead of an `expect` of
+  an event already recorded; all three failed 20 runs in 20 on the kit as it was. One reads that the asker's core
+  holds no request deadline while an expectation waits; one holds the probe's core over a fill and both windows, one
+  over an order whose fill is caused there afterwards -- yielded once, to the expectation or behind it; one expects
+  from an `onInit()` on a probe whose core is still building (an arrival on the kit as it was, the asker's clock gone
+  by). The others pin the probe that is gone: killed under expectations of two types, on its core and across; the run
+  that ends on that error; killed ahead of expectations already sent (on its core and across cores); telling the ones
+  waiting while one is still on its way; not outliving an asker whose core stopped with an expectation in its pipe; an
+  asker being killed that counts nothing; ended; a race won by the error; never a probe (an actor, the null id, a
+  broadcast); added through the engine; a second probe at an id a live one holds or a kit announced, by a kit, after a
+  kit that ended, and in a second engine; a driver known by its thread; stopped with its engine (no dead letter), and
+  by another actor's stop (no error for an expectation that waits); stopped with its core on an error (the scenario
+  told, another asker not, a forged notice ignored, and the refusal after); an asker killed under its expectation
+  (`cancelled_error`); the probe of `qb::KillEvent`. Ten older cases ordered a death, a loan or an arrival with sleeps
+  of 20 to 100 ms: they wait on an event now -- a probe the asker tells where it is, a watcher that hears the death
+  behind the probe, a turn of the core. `AKilledAskerOnAnotherCoreIsLetGoOfAtOnce` served 3, 1, 2 under a stall of 300
+  ms before the kill, and `ADownEventSentToTheProbeLetsGoOfNoLiveAsker` failed 12 runs in 16 under stops of a second
+  (two reviews' measures). Five upper bounds on wall time ("at once": within 500 ms or 1 s) are gone with the sleeps,
+  false on a stalled host: four are now an expectation that waits for nothing, sent behind the event that gives the
+  loan back, and the one across cores rests on the order of the values. Forty-three mutants are caught, among them the
+  asker's timeout put back, the deadline answered on its first lap, a kill that tells nobody or does not wait for what
+  is on its way, a killed probe that watches no asker, an expectation not counted, a census that refuses nothing or
+  takes a second probe for the first, a kit that announces no probe or withdraws another's, a driver that watches no
+  probe, ends an expectation on any end of one or on anybody's word, or is known by its id alone, a destructor that
+  answers, and the watch, the withdrawal and the give-back the older cases pin.
 
 - **`qb::test::TestKit::run()` decides each verdict once (Huly QB-57).** Two results of a run went to whichever
   thread ran first. `run()` read `hasError()` once `start()` had returned and, on an error, ended its wait at
