@@ -881,25 +881,53 @@ TEST_F(ListenerDeferNested, AKeptBreakOutlivesAPumpsPassThatEndsBeforeItPolls) {
     })) << "a kept break was lost to a pump's pass that ended before it polled";
 }
 
-/// A coroutine that defers `callback` once per pass of a pump under the main loop -- from the pump's tail, between
-/// two of its passes: at the main loop's depth, and never while the one it deferred is still queued -- until told to
-/// stop or until `give_up`. Under a blocking run each of those defers feeds the in-loop drain, which is then pending
-/// at the ENTRY of the pump's next pass.
-async::task<void>
-defers_once_between_passes(std::function<void()> callback, std::shared_ptr<bool const> stop, std::shared_ptr<bool> ended,
-                           std::chrono::steady_clock::time_point give_up) {
-    const auto queued = std::make_shared<bool>(false);
-    while (!*stop && std::chrono::steady_clock::now() < give_up) {
-        if (!*queued && async::listener::current.loop().depth() == 1) {
-            *queued = true;
-            async::defer([callback, queued] {
-                *queued = false;
-                callback();
-            });
-        }
-        co_await async::yield_or_cancel(async::cancellation_token{});
+/// Has a callback run at the ENTRY of every pass of a pump under the main loop, and counts what that pump did: a
+/// callback deferred at the main loop's depth under a blocking run feeds the in-loop drain, which is pending at the
+/// entry of the next pass, before it polls.
+struct FedAtEveryPass {
+    std::function<void()>                 callback;
+    async::async_event                    ran{true}; ///< auto-reset: one wake per callback run
+    bool                                  stop              = false;
+    bool                                  ended             = false;   ///< `feeds_every_pass()` returned: no pass is fed any more
+    bool const                           *waiting           = nullptr; ///< the pump's condition, while the pump runs
+    std::chrono::steady_clock::time_point due               = std::chrono::steady_clock::time_point::max(); ///< the pump's timer
+    std::size_t                           fed_while_waiting = 0; ///< callbacks run at a pass's entry, the pump waiting
+    std::size_t                           late              = 0; ///< passes ended past `due`, the pump still waiting: none polled
+    std::size_t                           away              = 0; ///< resumes away from the main loop's depth: the shape is broken
+
+    /// Defers the callback, for the in-loop drain to run at the next pass's entry.
+    static void
+    feed(std::shared_ptr<FedAtEveryPass> const &self) {
+        async::defer([self] {
+            if (self->waiting && *self->waiting)
+                ++self->fed_while_waiting;
+            if (!self->stop)
+                self->callback();
+            self->ran.set();
+        });
     }
-    *ended = true;
+};
+
+/// Feeds the pass after the one whose entry ran the callback deferred last -- from the pump's tail, between those
+/// two passes, at the main loop's depth -- until told to stop or until `give_up`. It is resumed ONCE per pass: by
+/// the event that callback set, which the ready queue serves at the tail of that pass. (A `yield_or_cancel()` loop is
+/// resumed again in the same drain, up to the turn's cap of 65536 resumes: a pass then cost tens of milliseconds in
+/// a debug build, a time no pass of the pump itself takes.) The first pass is fed before the pump begins.
+async::task<void>
+feeds_every_pass(std::shared_ptr<FedAtEveryPass> fed, std::chrono::steady_clock::time_point give_up) {
+    for (;;) {
+        co_await fed->ran.wait(); // the callback deferred last has run: this is the tail of the pass that ran it
+        if (fed->stop || std::chrono::steady_clock::now() >= give_up)
+            break;
+        if (async::listener::current.loop().depth() != 1) {
+            ++fed->away;
+            break;
+        }
+        if (fed->waiting && *fed->waiting && std::chrono::steady_clock::now() > fed->due)
+            ++fed->late;
+        FedAtEveryPass::feed(fed);
+    }
+    fed->ended = true;
 }
 
 TEST_F(ListenerDeferNested, AKeptBreakDoesNotKeepAPumpUnderItsRunFromPolling) {
@@ -909,8 +937,11 @@ TEST_F(ListenerDeferNested, AKeptBreakDoesNotKeepAPumpUnderItsRunFromPolling) {
     // for each point that says a kept break again: one that does nothing -- the drain itself says nothing there --
     // and four that end the way those points do: a pump of the library with nothing left to wait for, the relay a pump
     // written by hand ends with, an `EVRUN_ONCE` turn and a run of its own, both ended at their entry by a break of
-    // their own. Under a pass of another pump none of them says the kept break. The coroutine gives up by the clock
-    // after 600 ms, so a shape that starves fails then; it does not hang.
+    // their own. Under a pass of another pump none of them says the kept break. The case counts passes, never time: a
+    // pass that ends past the timer's due time with the pump still waiting is a pass that did not poll -- one at most
+    // ends between the due time and the poll that fires the timer, two when the two clocks are read apart -- and a
+    // pump that never polls again makes one at every pass until the feeding gives up, after 1.5 s: the case fails
+    // then, before its watchdog; it does not hang.
     using clock = std::chrono::steady_clock;
     enum class Drained {
         nothing,
@@ -922,9 +953,9 @@ TEST_F(ListenerDeferNested, AKeptBreakDoesNotKeepAPumpUnderItsRunFromPolling) {
     for (const Drained drained :
          {Drained::nothing, Drained::a_pump_of_the_library_with_nothing_to_wait_for, Drained::the_relay_of_a_pump_written_by_hand,
           Drained::an_evrun_once_turn_ended_at_its_entry, Drained::a_run_of_its_own_ended_at_its_entry}) {
-        const auto      stop  = std::make_shared<bool>(false);
-        const auto      ended = std::make_shared<bool>(false);
+        const auto      fed = std::make_shared<FedAtEveryPass>();
         clock::duration took{};
+        bool            fed_until_it_fired = false;
         EXPECT_TRUE(the_main_loop_ends_before_its_watchdog([&] {
             async::callback(
                 [&] {                      // a handler of the main loop
@@ -958,21 +989,34 @@ TEST_F(ListenerDeferNested, AKeptBreakDoesNotKeepAPumpUnderItsRunFromPolling) {
                             };
                             break;
                     }
-                    async::coro_scheduler().spawn(defers_once_between_passes(std::move(callback), stop, ended, clock::now() + 600ms));
-                    bool       waiting  = true;
+                    bool waiting  = true;
+                    fed->callback = std::move(callback);
+                    fed->waiting  = &waiting;
+                    async::coro_scheduler().spawn(feeds_every_pass(fed, clock::now() + 1500ms));
+                    FedAtEveryPass::feed(fed); // the first pass
                     const auto armed_at = clock::now();
+                    fed->due            = armed_at + 22ms; // the timer's 20 ms, and 2 for two clocks read apart
                     async::callback([&waiting] { waiting = false; }, 20ms);
                     async::run_until(waiting);
-                    took  = clock::now() - armed_at;
-                    *stop = true;
+                    took               = clock::now() - armed_at;
+                    fed_until_it_fired = !fed->ended;
+                    fed->waiting       = nullptr;
+                    fed->stop          = true;
                 },
                 1ms);
         })) << "drained="
             << static_cast<int>(drained);
-        EXPECT_LT(took, 300ms)
-            << "a pump under a run that kept a break did not poll while the in-loop drain was fed between its passes; drained="
-            << static_cast<int>(drained);
-        EXPECT_TRUE(pump([&] { return *ended; }, 2s)) << "the coroutine of this case did not end; drained=" << static_cast<int>(drained);
+        EXPECT_LE(fed->late, 2u) << "a pump under a run that kept a break did not poll while the in-loop drain was fed between its "
+                                    "passes: "
+                                 << fed->late << " passes ended past its timer's due time, which fired after "
+                                 << std::chrono::duration_cast<std::chrono::milliseconds>(took).count()
+                                 << " ms; drained=" << static_cast<int>(drained);
+        EXPECT_TRUE(fed_until_it_fired) << "the timer fired only once the feeding had ended: the pump starved while it was "
+                                           "fed, or the pass that fired it was not fed; drained="
+                                        << static_cast<int>(drained);
+        EXPECT_GE(fed->fed_while_waiting, 1u) << "no pass was fed while the pump waited; drained=" << static_cast<int>(drained);
+        EXPECT_EQ(fed->away, 0u) << "the feeding was resumed away from the main loop's depth; drained=" << static_cast<int>(drained);
+        EXPECT_TRUE(pump([&] { return fed->ended; }, 2s)) << "the coroutine of this case did not end; drained=" << static_cast<int>(drained);
         async::listener::current.clear();
     }
 }
