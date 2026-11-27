@@ -12,14 +12,15 @@
  * @brief The shipped actor test kit (`qb/testkit.h`, Huly QB-57) against a running engine.
  *
  * Every case is a scenario run by a `qb::test::TestKit` -- the kit's own shape, with no global atomics
- * and no hand-written driver -- and each asserts both what the scenario observed and how the run ended
+ * and no driver written by hand -- and each asserts both what the scenario observed and how the run ended
  * (`RunResult`). Covered: the expectation of an event sent to the probe, its sender kept; the probe's
  * per-type FIFO and an event recorded before the expectation; a timeout (a lower bound only: the probe
  * answers at its deadline, never earlier); an event arriving after a timed-out expectation, kept for the
  * next; `expect_none` over a quiet window, broken by an arrival, consuming nothing; two waiters, oldest first;
  * a probe on another core; a type the probe does not record; the exchanges a scenario asks other actors
  * with, registered by `run<Asks...>` (and the timeout without them, the reason the parameter exists); a
- * scenario that throws; the watchdog; an engine that refuses to start; one run per kit; the loan of an answered
+ * scenario that throws; the watchdog, whose verdict is final; an engine that refuses to start, and a core that stops
+ * on an error after it, which is not that; one run per kit; the loan of an answered
  * event -- abandoned expectations withdrawn, loans given back at their rank, a late acknowledgement -- and the
  * probe's watch of its askers -- a killed asker's waiters and loans let go of, on its core and across cores, its
  * loans in arrival order -- with a probe of `qb::DownEvent` still recording the ones it is sent.
@@ -27,9 +28,12 @@
 
 #include <gtest/gtest.h>
 #include <qb/testkit.h>
+#include <atomic>
 #include <chrono>
+#include <memory>
 #include <stdexcept>
 #include <string>
+#include <thread>
 
 using namespace std::chrono_literals;
 
@@ -205,6 +209,118 @@ qb::io::async::task<int>
 at_once() {
     co_return 1;
 }
+
+/// A hold of a core that the scenario begins and ends: `held` once the core is in it, until `open` is set.
+struct Latch {
+    std::atomic<bool> held{false};
+    std::atomic<bool> open{false};
+};
+
+struct Hold : qb::Event {};
+
+/// Holds its core from a `Hold` until the latch opens: a stall whose end the scenario decides, not a clock.
+class Holder : public qb::Actor {
+    std::shared_ptr<Latch> _latch;
+
+public:
+    explicit Holder(std::shared_ptr<Latch> latch)
+        : _latch(std::move(latch)) {}
+    qb::io::async::task<bool>
+    onInit() override {
+        registerEvent<Hold>(*this);
+        co_return true;
+    }
+    void
+    on(Hold const &) {
+        _latch->held.store(true);
+        // No scenario leaves it shut: the bound only keeps a broken one from holding the engine's join for ever.
+        for (const auto give_up = steady::now() + 60s; !_latch->open.load() && steady::now() < give_up;)
+            std::this_thread::sleep_for(1ms);
+    }
+};
+
+/// Opens the latch when the engine is told to stop: what the open lets through follows the stop's decision.
+class Releaser : public qb::Actor {
+    std::shared_ptr<Latch> _latch;
+
+public:
+    explicit Releaser(std::shared_ptr<Latch> latch)
+        : _latch(std::move(latch)) {}
+    qb::io::async::task<bool>
+    onInit() override {
+        registerEvent<qb::SignalEvent>(*this);
+        co_return true;
+    }
+    void
+    on(qb::SignalEvent const &) {
+        _latch->open.store(true);
+        kill();
+    }
+};
+
+/// Fills `probe` -- on another core -- then holds `holder`'s, the caller's own: the fill is answered while the hold lasts.
+qb::io::async::task<void>
+fill_then_hold(qb::ScopedCoroContext ctx, qb::ActorId probe, qb::ActorId holder) {
+    ctx.push_to<Filled>(probe, 7);
+    ctx.push_to<Hold>(holder);
+    co_return;
+}
+
+/// Asks a `Mourner` to watch `who`.
+struct Mourn : qb::Event {
+    qb::ActorId who;
+
+    explicit Mourn(qb::ActorId w)
+        : who(w) {}
+};
+
+/// Watches the actor a `Mourn` names and tells `report` -- a probe of `Cancelled` -- once it is gone: a scenario
+/// waits for a death on that probe, not on a sleep.
+class Mourner : public qb::Actor {
+    qb::ActorId _report;
+
+public:
+    explicit Mourner(qb::ActorId report)
+        : _report(report) {}
+    qb::io::async::task<bool>
+    onInit() override {
+        registerEvent<Mourn>(*this);
+        registerEvent<qb::DownEvent>(*this);
+        co_return true;
+    }
+    void
+    on(Mourn const &m) {
+        watch(m.who);
+    }
+    void
+    on(qb::DownEvent const &) {
+        push<Cancelled>(_report, 1);
+    }
+};
+
+/// Throws from its constructor: the core that would build it refuses to start, and builds nothing after it.
+class Unbuildable : public qb::Actor {
+public:
+    Unbuildable() {
+        throw std::runtime_error("an actor that cannot be built");
+    }
+};
+
+/// Ends its core: an exception out of a handler is the core's last pass.
+struct Boom : qb::Event {};
+
+class Thrower : public qb::Actor {
+public:
+    qb::io::async::task<bool>
+    onInit() override {
+        registerEvent<Boom>(*this);
+        co_return true;
+    }
+    void
+    on(Boom const &) {
+        throw std::runtime_error("a handler that throws ends its core");
+    }
+};
 
 } // namespace testkit_test
 
@@ -741,4 +857,65 @@ TEST(TestKit, AnExpectationWithdrawnAfterItsAnswerGivesTheEventBackAtOnce) {
         },
         30s);
     EXPECT_TRUE(run) << run.describe();
+}
+
+TEST(TestKit, ACoreThatStopsOnAnErrorRightAfterTheStartDoesNotEndTheRun) {
+    // run() read hasError() right after the start and took any error for a start that was refused: a core that threw
+    // in its first passes -- before the test thread had looked -- ended the wait at once, and a scenario that ran on
+    // was reported not run to its end. Which thread looked first decided the report -- about one run in four here, so
+    // the case runs twenty. The scenario hears core 1 stop (a watch answers a core's stop) and runs on.
+    for (int round = 0; round < 20; ++round) {
+        qb::test::TestKit kit;
+        const auto        thrower = kit.add<Thrower>(1);
+        const auto        deaths  = kit.probe<Cancelled>(0);
+        const auto        mourner = kit.add<Mourner>(0, deaths);
+        const auto        run     = kit.run(
+            [thrower, deaths, mourner](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
+                ctx.push_to<Mourn>(mourner, thrower);
+                ctx.push_to<Boom>(thrower); // core 1 stops on it, in its first passes
+                EXPECT_TRUE((co_await qb::test::expect<Cancelled>(ctx, deaths, 10s)).has_value()) << "core 1 stopped: its watcher said so";
+                co_await ctx.sleep(50ms); // the scenario runs on, on core 0
+            },
+            30s);
+        EXPECT_TRUE(run.completed) << "round " << round << ": " << run.describe();
+        EXPECT_FALSE(run.timed_out) << "round " << round;
+        EXPECT_TRUE(run.engine_error) << "round " << round << ": a core stopped on an exception, the run says so";
+        EXPECT_FALSE(run);
+    }
+}
+
+TEST(TestKit, AStartRefusedBeforeTheDriverIsBuiltEndsTheRunAtOnce) {
+    // The other half of the rule: an actor added before the driver throws from its constructor, its core builds
+    // nothing after it, and no driver exists to end the wait -- run() ends it itself, without the watchdog.
+    qb::test::TestKit kit;
+    (void) kit.add<Unbuildable>(0);
+    const auto run = kit.run([](qb::ScopedCoroContext) -> qb::io::async::task<void> { co_return; }, 30s);
+    EXPECT_FALSE(run);
+    EXPECT_TRUE(run.engine_error) << run.describe();
+    EXPECT_FALSE(run.completed);
+    EXPECT_FALSE(run.timed_out) << "nobody was left to end the wait but run() itself";
+}
+
+TEST(TestKit, AScenarioThatEndsAfterTheWatchdogDecidedIsNotReportedCompleted) {
+    // The watchdog fires while the scenario's core is held in a handler, and the answer to its expectation is in that
+    // core's mailbox, ahead of the stop: the scenario resumes, returns, and a run that had `timed_out` was reported
+    // `completed` too -- by which of the two its core read first. The watchdog's verdict is the run's. The hold ends
+    // when the engine is told to stop, heard on the probe's core: after the answer left it, never before the verdict.
+    qb::test::TestKit kit;
+    const auto        latch  = std::make_shared<Latch>();
+    const auto        probe  = kit.probe<Filled>(1);
+    const auto        holder = kit.add<Holder>(0, latch);
+    (void) kit.add<Releaser>(1, latch);
+    const auto run = kit.run(
+        [probe, holder](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
+            auto [filled, held] = co_await qb::io::async::when_all(qb::test::expect<Filled>(ctx, probe, std::chrono::hours(1)),
+                                                                   fill_then_hold(ctx, probe, holder));
+            (void) held;
+            EXPECT_EQ(filled ? filled->qty : -1, 7);
+        },
+        200ms);
+    EXPECT_FALSE(run);
+    EXPECT_TRUE(run.timed_out) << run.describe();
+    EXPECT_FALSE(run.completed) << "a scenario that returned after the watchdog had decided was reported as run to its end";
+    EXPECT_FALSE(run.error) << run.describe();
 }

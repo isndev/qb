@@ -205,6 +205,7 @@ struct WithdrawOnExit {
 struct ScenarioState {
     std::mutex              lock;
     std::condition_variable done;
+    bool                    built     = false; ///< The driver exists, or did: its destructor ends the wait if nothing else does
     bool                    finished  = false;
     bool                    completed = false;
     std::exception_ptr      error;
@@ -250,7 +251,10 @@ class ScenarioDriverBase : public qb::Actor {
 protected:
     ScenarioDriverBase(std::shared_ptr<ScenarioRunner> runner, std::shared_ptr<ScenarioState> state)
         : _runner(std::move(runner))
-        , _state(std::move(state)) {}
+        , _state(std::move(state)) {
+        std::lock_guard<std::mutex> guard(_state->lock);
+        _state->built = true;
+    }
     ~ScenarioDriverBase() override { // destroyed before its scenario ended: the run ends, not run to its end (Huly QB-1227)
         _state->finish(false, nullptr);
     }
@@ -687,7 +691,10 @@ expect_none(qb::ScopedCoroContext ctx, qb::ActorId probe, qb::duration window) {
  * @brief An engine for one test: add the actors and probes, then `run()` one scenario.
  * @details `run()` adds the driver, starts the engine on its own threads, waits for the scenario to
  *          end -- the driver stops the engine at once when it returns or throws -- for the watchdog, or for the
- *          driver's end (an engine stopped first), then joins and reads `hasError()`. One run per kit: an engine does not restart.
+ *          driver's end (an engine stopped first), then joins and reads `hasError()`. A core other than the driver's that
+ *          stops on an error ends nothing: the scenario runs on, and `RunResult::engine_error` says so. The watchdog's
+ *          verdict is final: what a scenario still does before its core reads the stop is not reported. One run per
+ *          kit: an engine does not restart.
  *          `qb::Main::stop()` stops every engine of the process, so kits run one at a time. Configure
  *          the cores through `engine()` before `run()` (a core runs at latency 0, spinning, by default).
  */
@@ -742,11 +749,23 @@ public:
             throw std::logic_error("qb::test::TestKit::run: the scenario driver could not be added");
 
         RunResult result;
-        if (_engine.start(true); _engine.hasError()) // startup refused: the driver may never have been built to end the wait
+        _engine.start(true);
+        // A start that was refused before the driver was built leaves nobody to end the wait: end it here. A driver that
+        // was built ends it itself, at its destruction at the latest -- and `hasError()` alone does not say "refused":
+        // a core that stops on an exception in its first passes sets it too, under a scenario that runs on.
+        bool refused_before_the_driver = false;
+        if (_engine.hasError()) {
+            std::lock_guard<std::mutex> guard(state->lock);
+            refused_before_the_driver = !state->built;
+        }
+        if (refused_before_the_driver)
             state->finish(false, nullptr);
         {
             std::unique_lock<std::mutex> guard(state->lock);
             result.timed_out = !qb::detail::wait_for_monotonic(state->done, guard, watchdog, [&state] { return state->finished; });
+            // The watchdog's verdict is the run's, decided here: a scenario its core resumes before it reads the stop --
+            // an answer was ahead of it -- and that returns or throws then, changes nothing in the result.
+            state->finished = true;
         }
         qb::Main::stop(); // the driver stopped it already unless the watchdog fired: idempotent, and no join hangs
         _engine.join();

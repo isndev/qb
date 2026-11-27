@@ -938,6 +938,25 @@ policy.
 
 ### Fixed
 
+- **`qb::test::TestKit::run()` decides each verdict once (Huly QB-57).** Two results of a run went to whichever
+  thread ran first. `run()` read `hasError()` once `start()` had returned and, on an error, ended its wait at
+  once: a start that is refused before the driver is built leaves nobody else to end it. But a core that stops on
+  an exception out of a handler sets `hasError()` too, and it can do so in its first passes, before the test
+  thread has looked. A scenario that ran on, on its own core, was then reported not run to its end: 27 runs in 100
+  on an M4 for a scenario whose first act makes another core throw. `run()` now ends the wait there only when the
+  driver was never built, which its constructor records; a driver that exists ends the wait itself, at its
+  destruction at the latest. An error on another core than the driver's ends nothing: the scenario runs on, to its
+  end or to the watchdog, and `RunResult::engine_error` says so. The second: a watchdog that fired did not close
+  the result. A scenario whose core still read an answer ahead of the stop -- it was held in a handler meanwhile --
+  resumed and returned, and the run came back `timed_out` and `completed` at once. The watchdog's verdict is now
+  final. Proven by `TestKit.ACoreThatStopsOnAnErrorRightAfterTheStartDoesNotEndTheRun` -- twenty kits a run, the
+  scenario hearing the other core stop before it goes on -- and by
+  `AScenarioThatEndsAfterTheWatchdogDecidedIsNotReportedCompleted`, whose hold ends when the engine is told to
+  stop, heard on the core that answered: 10 runs in 10 red each on the kit as it was, none in 20 after.
+  `AStartRefusedBeforeTheDriverIsBuiltEndsTheRunAtOnce` pins the half of the first rule that stays. Four mutants
+  are caught: the old test put back, a driver that never says it was built, a refused start that ends nothing, a
+  watchdog whose verdict is not final.
+
 - **A core that throws in its first pass no longer refuses the start of a peer still at the barrier (Huly QB-57).**
   A core that fails once it runs stores a runtime marker over the start barrier's ready count, kept apart from
   every startup sentinel so that `Main::start()` does not read it as a start that was refused. The cores had no

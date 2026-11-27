@@ -16,7 +16,7 @@ A test of actor code has the same shape every time: an engine, the actors under 
 
 The engine runs for real, on its own threads: a test asserts on what arrives within a deadline, never on an interleaving. The kit depends on no test framework.
 
-<!-- src: qb/src/qb/core/TestKit.h:694-759 (TestKit); qb/src/qb/core/TestKit.h:369-615 (TestProbe); qb/src/qb/core/TestKit.h:630-652 (expect); qb/src/qb/core/TestKit.h:666-684 (expect_none); qb/src/qb/core/TestKit.h:312-346 (RunResult) -->
+<!-- src: qb/src/qb/core/TestKit.h:701-778 (TestKit); qb/src/qb/core/TestKit.h:373-619 (TestProbe); qb/src/qb/core/TestKit.h:634-656 (expect); qb/src/qb/core/TestKit.h:670-688 (expect_none); qb/src/qb/core/TestKit.h:316-350 (RunResult) -->
 
 ## A first test
 
@@ -73,7 +73,7 @@ TEST(Desk, FillsAnOrder) {
 }
 ```
 
-<!-- src: qb/tests/core/system/patterns/testkit.cpp:213-228 -->
+<!-- src: qb/tests/core/system/patterns/testkit.cpp:329-344 -->
 
 `run` is `true` when the scenario ran to its end, the watchdog did not fire and the engine reported no error; `run.describe()` names what went wrong (`"the scenario threw: ..."`, `"the watchdog stopped the engine"`, `"the engine reported an error (qb::Main::hasError())"`), or says `"ok"`.
 
@@ -88,7 +88,7 @@ Check with `EXPECT_*` inside the scenario. `ASSERT_*` does not compile there: it
 - **The wrong probe fails loudly.** `expect<E>` on a probe that does not record `E` throws `std::logic_error`.
 - **Any core.** `expect` is a `qb::ask` of the probe, so the probe may live on another core than the scenario (`kit.probe<Filled>(1)`). When the probe does not answer at all — its core stopped — `expect` returns empty after the timeout plus a grace (250 ms), and `expect_none` returns `false`.
 
-<!-- src: qb/src/qb/core/TestKit.h:457-614 (record, on(Expectation), on(ExpectationDeadline), the loan's acknowledgement, withdrawal and expiry, on(DownEvent)); qb/tests/core/system/patterns/testkit.cpp:230-378; qb/tests/core/system/patterns/testkit.cpp:471-710; qb/tests/core/system/patterns/testkit.cpp:725-744 -->
+<!-- src: qb/src/qb/core/TestKit.h:461-618 (record, on(Expectation), on(ExpectationDeadline), the loan's acknowledgement, withdrawal and expiry, on(DownEvent)); qb/tests/core/system/patterns/testkit.cpp:346-494; qb/tests/core/system/patterns/testkit.cpp:587-826; qb/tests/core/system/patterns/testkit.cpp:841-860 -->
 
 ## When the scenario asks other actors
 
@@ -103,7 +103,7 @@ const auto run = kit.run<Quote>([quoter](qb::ScopedCoroContext ctx) -> qb::io::a
 
 Without `<Quote>` the reply reaches a driver that does not handle it — a dead letter — and the `ask` times out.
 
-<!-- src: qb/tests/core/system/patterns/testkit.cpp:402-427 -->
+<!-- src: qb/tests/core/system/patterns/testkit.cpp:518-543 -->
 
 ## The engine and the run
 
@@ -111,10 +111,11 @@ Without `<Quote>` the reply reaches a driver that does not handle it — a dead 
 
 - **One run per kit.** An engine does not restart; a second `run()` throws `std::logic_error`. Use one kit per test.
 - **One kit at a time.** The driver ends the run with `qb::Main::stop()`, which stops every engine of the process.
-- **The watchdog.** A scenario that never ends is stopped when `watchdog` passes: `RunResult::timed_out` is set, `completed` is not, and `error` stays empty — the scenario's coroutine is torn down with its core without being resumed. A run whose engine stops before its scenario ends — the scenario stopping it, another actor's exception on the driver's core, an engine that refuses to start (a registered core with no actor, an actor whose constructor throws: `engine_error`) — returns then, `completed` unset, whatever the watchdog: the driver's destructor, or the refused start, ends the wait -- and a driver destroyed before its scenario ends reports it not run to its end even if the scenario's frame later finishes (since 3.4, Huly QB-1227; a watchdog of `qb::duration::max()` waits without end). The stop is cooperative: `run()` then joins the engine, so a core held in a handler that never returns keeps it waiting — CTest's own timeout is the bound there.
+- **The watchdog.** A scenario that never ends is stopped when `watchdog` passes: `RunResult::timed_out` is set, `completed` is not, and `error` stays empty — the scenario's coroutine is torn down with its core. That verdict is final: what a scenario still does before its core reads the stop — an answer was ahead of it in that core's mailbox, it resumes and returns — changes nothing in the result. A run whose engine stops before its scenario ends — the scenario stopping it, another actor's exception on the driver's core, an engine that refuses to start (a registered core with no actor, an actor whose constructor throws: `engine_error`) — returns then, `completed` unset, whatever the watchdog: the driver's destructor, or the refused start, ends the wait -- and a driver destroyed before its scenario ends reports it not run to its end even if the scenario's frame later finishes (since 3.4, Huly QB-1227; a watchdog of `qb::duration::max()` waits without end). The stop is cooperative: `run()` then joins the engine, so a core held in a handler that never returns keeps it waiting — CTest's own timeout is the bound there.
+- **An error on another core does not end the run.** A core other than the driver's that stops on an error — an exception out of a handler there — sets `engine_error` and ends nothing: the scenario runs on, to its end or to the watchdog.
 - **Capture by value.** The scenario is stored in the driver for the run, as any `spawn` body: capture ids and values, never references to the test's locals.
 
-<!-- src: qb/src/qb/core/TestKit.h:721-758 (run); qb/tests/core/system/patterns/testkit.cpp:429-463 -->
+<!-- src: qb/src/qb/core/TestKit.h:728-777 (run); qb/tests/core/system/patterns/testkit.cpp:545-579; qb/tests/core/system/patterns/testkit.cpp:862-885; qb/tests/core/system/patterns/testkit.cpp:887-897; qb/tests/core/system/patterns/testkit.cpp:899-921 -->
 
 ## Pitfalls
 
