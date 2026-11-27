@@ -137,9 +137,9 @@ public:
 
     // The startup barrier (Main::start / Main::__wait__all__cores__ready) packs
     // the "cores ready" count and the error sentinels into one atomic counter:
-    // a value >= BadInit means a core failed to start, any smaller value is the
-    // clean ready-count (each core fetch_add(1)). That separation only holds
-    // while the largest possible clean count — bounded by the number of cores,
+    // a startup sentinel (>= BadInit) means a core failed to start -- the marker of an error PAST the barrier, stored
+    // above them all, does not (Main.cpp) -- and any smaller value is the clean ready-count (each core fetch_add(1)).
+    // That separation only holds while the largest possible clean count — bounded by the number of cores,
     // i.e. MaxCores — stays strictly below the first error sentinel (BadInit).
     static_assert(static_cast<uint64_t>(qb::MaxCores) < static_cast<uint64_t>(BadInit),
                   "startup-barrier sentinel space (Error::BadInit) must exceed "

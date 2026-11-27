@@ -525,9 +525,9 @@ std::array<std::atomic<unsigned int>, Main::SignalSlots> Main::_signal_raised{};
 std::atomic<unsigned int>                                Main::_signal_generation{0};
 
 namespace {
-// A worker can fail in __workflow__ immediately after the startup barrier and
-// overwrite its ready count before Main::start reads it. Keep that runtime
-// error distinct from every startup sentinel plus the maximum barrier count.
+// A worker can fail in __workflow__ immediately after the startup barrier and overwrite its ready count before
+// Main::start -- or a peer still waiting at the barrier -- reads it. Keep that runtime error distinct from every
+// startup sentinel plus the maximum barrier count: neither reader takes it for a start that was refused.
 constexpr uint64_t kRuntimeExceptionThrown = static_cast<uint64_t>(VirtualCore::Error::ExceptionThrown) | (1ull << 13u);
 static_assert(kRuntimeExceptionThrown > static_cast<uint64_t>(VirtualCore::Error::ExceptionThrown) + qb::MaxCores);
 } // namespace
@@ -795,7 +795,7 @@ Main::__wait__all__cores__ready(std::size_t const nb_core, std::atomic<uint64_t>
     sync_start.fetch_add(1, std::memory_order_acq_rel);
     uint64_t ret = 0;
     wait_sync_start(sync_start, nb_core, ret);
-    return ret < VirtualCore::Error::BadInit;
+    return ret < VirtualCore::Error::BadInit || ret >= kRuntimeExceptionThrown; // a peer's error past the barrier
 }
 
 void

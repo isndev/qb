@@ -503,4 +503,71 @@ TEST(MainLifecycle, RuntimeFailureDoesNotJoinLivePeerInsideStart) {
     EXPECT_TRUE(main.hasError());
 }
 
+// A core that throws in its FIRST pass, while a peer has not left the start barrier yet. Core 1 builds slowly, so
+// core 0 is the one that waits -- in the barrier's sleep quanta -- and core 1, last to arrive, enters its loop at
+// once, handles the event its actor sent itself from onInit(), and throws. Core 0 then reads the runtime marker
+// where it expected the count of ready cores: it took it for a start that was refused and left without a pass,
+// its actors destroyed -- for an error that came AFTER every core had started.
+std::atomic<int> g_first_pass_peer_ran{0};
+
+struct ThrowNow : qb::Event {};
+
+class SlowToBuild : public qb::Actor {
+public:
+    SlowToBuild() {
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+    qb::io::async::task<bool>
+    onInit() final {
+        co_return true;
+    }
+};
+
+class ThrowsInItsFirstPass : public qb::Actor {
+public:
+    qb::io::async::task<bool>
+    onInit() final {
+        registerEvent<ThrowNow>(*this);
+        push<ThrowNow>(id());
+        co_return true;
+    }
+    void
+    on(ThrowNow const &) {
+        throw std::runtime_error("a handler that throws in the core's first pass");
+    }
+};
+
+class RunsOnePass : public qb::Actor {
+public:
+    qb::io::async::task<bool>
+    onInit() final {
+        registerEvent<ThrowNow>(*this);
+        push<ThrowNow>(id());
+        co_return true;
+    }
+    void
+    on(ThrowNow const &) {
+        g_first_pass_peer_ran.fetch_add(1);
+        kill();
+    }
+};
+
+TEST(MainLifecycle, APeersErrorPastTheBarrierDoesNotRefuseACoreStillAtIt) {
+    // Each start races two threads, and the old outcome needed the waiting core to look in the few microseconds after
+    // its peer stored the error: about four engines in five under an optimised build, one in eight under a sanitizer.
+    // A hundred leave it no room under either.
+    constexpr int engines = 100;
+    g_first_pass_peer_ran.store(0);
+    for (int i = 0; i < engines; ++i) {
+        qb::Main main;
+        main.addActor<SlowToBuild>(1);
+        main.addActor<ThrowsInItsFirstPass>(1);
+        main.addActor<RunsOnePass>(0);
+        main.start();
+        main.join();
+        EXPECT_TRUE(main.hasError()) << "core 1 threw: the engine says so";
+    }
+    EXPECT_EQ(g_first_pass_peer_ran.load(), engines) << "a core still at the start barrier was refused its start by a peer's error past it";
+}
+
 } // namespace

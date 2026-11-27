@@ -938,6 +938,19 @@ policy.
 
 ### Fixed
 
+- **A core that throws in its first pass no longer refuses the start of a peer still at the barrier (Huly QB-57).**
+  A core that fails once it runs stores a runtime marker over the start barrier's ready count, kept apart from
+  every startup sentinel so that `Main::start()` does not read it as a start that was refused. The cores had no
+  such care for each other: one still waiting at the barrier read the marker as a failed start and left,
+  destroying every actor it had built without running a pass. Which core reached the
+  barrier last decided it. A waiting core now takes the marker for what it is, a peer's error past the barrier,
+  and runs: `hasError()` reports the error, and the engine is the caller's to stop, as after any exception out of
+  a handler. Proven by `MainLifecycle.APeersErrorPastTheBarrierDoesNotRefuseACoreStillAtIt` -- a hundred engines
+  of two cores, one that takes 5 ms longer to build its actors and throws in its first pass, one that counts the
+  pass it runs: 20 runs in 20 red before, the peer running in 6 to 19 engines of the hundred (228 of 2000), and
+  none red in 20 after (2000 of 2000). Found by an independent review of the test kit
+  (`qb::test::TestKit::run()`): a scenario on the waiting core never started.
+
 - **A QUIC endpoint's socket no longer asks for broadcast (Huly QB-1246).** `qb::io::udp::socket::init()` sets
   `SO_BROADCAST` on every socket it opens, and the endpoint's was one. QUIC runs between two hosts: a client endpoint
   given a broadcast address -- `255.255.255.255`, a subnet's broadcast -- sent its Initial to every host of the local
