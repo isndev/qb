@@ -161,11 +161,11 @@ protected:
      * @brief The socket of this endpoint, once bound: non-blocking, and never a broadcaster (Huly QB-1246).
      * @details qb::io::udp::socket::init() asks every socket it opens for broadcast (SO_BROADCAST). QUIC runs between two
      *          hosts: a client endpoint given a broadcast address sent its Initial to every host of the local network --
-     *          on Linux and Windows, which send it once the socket has asked; macOS refused it -- and waited for its
-     *          handshake timeout. Turned off, the system refuses that first datagram at once (EACCES, WSAEACCES), and
-     *          the endpoint delivers that close inside its own connect(), as for any address it cannot reach. A server
-     *          never picks a destination -- it answers the address a datagram came from --: turned off there too, it
-     *          can never answer one with a broadcast.
+     *          on Linux, Windows and macOS once the socket has asked (on macOS, unless the interface it leaves by cannot
+     *          broadcast: EADDRNOTAVAIL) -- and waited for its handshake timeout. Turned off, the system refuses that
+     *          first datagram at once (EACCES, WSAEACCES), and the endpoint delivers that close inside its own connect(),
+     *          as for any address it cannot reach. A server never picks a destination -- it answers the address a
+     *          datagram came from --: turned off there too, it can never answer one with a broadcast.
      */
     void
     configure_socket() {

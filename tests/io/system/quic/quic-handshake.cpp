@@ -1227,9 +1227,9 @@ broadcast_of_udp_socket_bound_to([[maybe_unused]] std::uint16_t port) {
 /**
  * @test A QUIC endpoint never asks for broadcast: a client given the broadcast address cannot start (Huly QB-1246)
  * @brief qb::io::udp::socket::init() asks every socket it opens for broadcast (SO_BROADCAST), the endpoint's included.
- *        A client endpoint given 255.255.255.255 then sent its Initial to every host of the local network on Linux and
- *        Windows -- seven retransmissions measured on Linux -- and waited for its handshake timeout; macOS refused it.
- *        The endpoint turns broadcast off on its socket: the system refuses that first datagram at once (EACCES,
+ *        A client endpoint given 255.255.255.255 then sent its Initial to every host of the local network -- on macOS
+ *        too, unless its interface cannot broadcast (EADDRNOTAVAIL) -- and waited for its handshake timeout. The
+ *        endpoint turns broadcast off on its socket: the system refuses that first datagram at once (EACCES,
  *        WSAEACCES), and the endpoint delivers the close inside its own connect(), as for any address it cannot reach.
  *        A server's socket does not ask for it either: it answers the address a datagram came from (read on POSIX).
  */

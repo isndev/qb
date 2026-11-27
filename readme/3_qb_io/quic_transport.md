@@ -328,7 +328,7 @@ void run_server(Server& server) {
 
 `listen(bind_uri, cert_file, key_file, alpn_protocols = {"h3"})` binds the UDP socket, configures the backend, starts the server role, registers the I/O and timer watchers, and drains the first batch of packets. It returns `false` if the bind fails.
 
-Both roles turn broadcast off on the socket they bind: `qb::io::udp::socket::init()` asks every socket it opens for it (`SO_BROADCAST`), and QUIC runs between two hosts. A client given a broadcast address therefore cannot start -- the system refuses its first datagram at once, and the endpoint delivers that close inside its own `connect()` --, where Linux and Windows sent its Initial to every host of the local network (3.4, Huly QB-1246).
+Both roles turn broadcast off on the socket they bind: `qb::io::udp::socket::init()` asks every socket it opens for it (`SO_BROADCAST`), and QUIC runs between two hosts. A client given a broadcast address therefore cannot start -- the system refuses its first datagram at once, and the endpoint delivers that close inside its own `connect()` --, where Linux, Windows and macOS sent its Initial to every host of the local network (3.4, Huly QB-1246). On macOS that send failed only when the interface it would leave by could not broadcast (`EADDRNOTAVAIL`, which XNU checks before `SO_BROADCAST`).
 
 <!-- src: qb/src/qb/io/async/quic/endpoint.h:171-174 (configure_socket), :463, :521; qb/src/qb/io/udp/socket.cpp:90; qb/tests/io/system/quic/quic-handshake.cpp:1236-1265 -->
 
