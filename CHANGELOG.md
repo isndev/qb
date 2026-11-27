@@ -216,8 +216,8 @@ policy.
   expectation behind N of them waited up to 2 s × N -- and an `expect_none` could see "absent" while the event sat
   with a dead waiter; and an acknowledgement arriving after its loan expired left the event served twice. Each
   recorded event now keeps its rank of arrival, an abandoned expectation withdraws itself
-  (`detail::ExpectationWithdrawn`), and a late acknowledgement takes the copy given back out again while it is still
-  recorded. A third review found a killed asker's waiters still parked (its scope is cancelled first, it withdraws
+  (`detail::ExpectationWithdrawn`), and a late acknowledgement took the copy given back out again while it was still
+  recorded -- until a loan stopped timing out at all (the entry under Fixed). A third review found a killed asker's waiters still parked (its scope is cancelled first, it withdraws
   nothing), each next event lent to them for two seconds: the probe now watches every asker (`watch()`) and, on its
   `DownEvent`, drops its waiters and gives its loans back at their rank; five mutants of it -- no watch, no waiter
   dropped, no loan given back, a loan given back at the head or at the tail of its queue -- are caught. A fourth
@@ -938,6 +938,24 @@ policy.
   free it after the loop, or stop it first. Nothing in qb, the modules or the examples frees one started (audited).
 
 ### Fixed
+
+- **An event a `qb::test::TestProbe` lent is no longer served twice when its asker reads late (Huly QB-57).** An
+  event the probe answers with is lent until its asker acknowledges it, and the loan timed out after two seconds
+  (`detail::lend_hold`): the event went back to its queue. Under an asker whose core stalled past them -- a handler
+  that holds it, a host that stops -- it went back while that asker still read its answer, and the next expectation
+  was served the same event: one fill sent, two expectations yielding it. A second clock of the kit that changed
+  what a test observes, the class of the asker's own timeout. A loan now ends by an event and by nothing else: its
+  asker acknowledges it, withdraws its expectation, or is gone (the probe watches it). An asker that reads its
+  answer late still has it, and one that takes an event and never acknowledges it keeps it for as long as it lives.
+  `detail::lend_hold`, `detail::LendExpired` and the memory of expired loans are gone. Proven by
+  `TestKit.ALoanOutlastsAStallOfItsAsker` -- the asker's core held 2.5 s behind the probe's answer, one fill, two
+  expectations, the first read 2.5 s and more after it was lent -- 3 runs in 3 red on the kit as it was and with the
+  asker's fix alone, green with this one. It takes the place of the case that pinned the expiry
+  (`AnAcknowledgementAfterItsLoanExpiredTakesTheCopyGivenBack`: there is no expiry to acknowledge after).
+  `AnAcknowledgedEventDoesNotComeBack` waited out the hold to see that nothing came back; it now kills the asker
+  that acknowledged, the one event left that gives a loan back. No other assertion moves. Six mutants are caught:
+  the expiry put back, an acknowledgement that ends no loan, and four that keep a loan or a waiter its event should
+  release.
 
 - **`qb::test::expect` and `expect_none` return the probe's answer, never a timeout of their own (Huly QB-57).** The
   two asked the probe with a deadline of their own -- the probe's wait plus a grace of 250 ms -- and read its expiry

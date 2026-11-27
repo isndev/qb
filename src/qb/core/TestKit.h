@@ -160,19 +160,6 @@ struct ExpectationWithdrawn : qb::Event {
         : token(t) {}
 };
 
-/// A probe's reminder to itself that the event lent as `lend` was never acknowledged.
-struct LendExpired : qb::Event {
-    std::uint64_t lend = 0;
-
-    explicit LendExpired(std::uint64_t l)
-        : lend(l) {}
-};
-
-/// How long a probe keeps an event it answered with, unacknowledged, before it records it again: the asker
-/// acknowledges at once, an expectation it abandons is withdrawn at once (`ExpectationWithdrawn`), and a dead
-/// asker's loans come back at its `qb::DownEvent`, so only an asker whose core stalls past it reaches it.
-inline constexpr qb::duration lend_hold = std::chrono::seconds(2);
-
 /// The names of the expectations of the process: unique, so a probe tells two of one asker apart. Anchored as the
 /// core's other process-wide counters (`QB_ABI_ANCHOR`): one object across the shared images of a program on ELF
 /// and Mach-O; on Windows qb has no export macro yet, and each DLL counts its own.
@@ -628,8 +615,9 @@ asking(qb::ScopedCoroContext const &ctx, qb::ActorId probe) {
  *          ends: its waiter is forgotten, and an event lent to it returns at once to its place in the queue, in
  *          arrival order, for the next expectation. The probe watches every actor that asks it (`watch()`): when
  *          one is gone, its waiters are dropped and what it was lent returns the same way, oldest event first. A
- *          loan nobody acknowledges otherwise -- an asker whose core stalls -- returns after `detail::lend_hold`
- *          (2 s). A probe may record `qb::DownEvent` too: it records the ones it is sent, and keeps the answers of
+ *          loan ends by one of those three -- the acknowledgement, the withdrawal, the asker's death -- and by no
+ *          clock: an asker that reads its answer late still has it, and one that never acknowledges keeps it for
+ *          as long as it lives. A probe may record `qb::DownEvent` too: it records the ones it is sent, and keeps the answers of
  *          its own watches -- a DownEvent about an asker it watches whose source is that asker -- to itself. A
  *          DownEvent of that shape it cannot tell from one: an asker that sends one about itself (a `forward()`
  *          keeps the source) is taken as gone: what waits for it is dropped, unanswered. That asker apart, the probe
@@ -681,17 +669,8 @@ class TestProbe final : public qb::Actor {
         qb::ActorId   asker;
         std::uint64_t token;
     };
-    /// A loan that expired: an acknowledgement arriving after it takes the event back out of its queue.
-    struct expired_loan {
-        std::uint64_t id;
-        queue        *from;
-        std::uint64_t seq;
-    };
-    static constexpr std::size_t expired_memory = 256;
-
     std::array<queue, sizeof...(Events)> _queues{queue{qb::type_id<Events>(), {}, {}}...};
     std::vector<loan>                    _lent;
-    std::deque<expired_loan>             _expired;
     std::vector<qb::ActorId>             _askers; ///< Watched: their DownEvent lets go of what waits for them
     std::uint64_t                        _next_ticket = 0;
     std::uint64_t                        _next_lend   = 0;
@@ -714,15 +693,13 @@ class TestProbe final : public qb::Actor {
         return nullptr;
     }
 
-    /// Lend `item` of `q` to an expectation: it comes back to `q` unless the asker acknowledges it in time.
+    /// Lend `item` of `q` to an expectation. The loan ends by an event, never by a clock: its asker acknowledges it
+    /// (`ExpectationTaken`: the asker has it), withdraws the expectation (`ExpectationWithdrawn`: back to `q`), or is
+    /// gone (its `qb::DownEvent`: back to `q`).
     std::uint64_t
     lend(queue &q, entry item, qb::ActorId asker, std::uint64_t token) {
         const auto id = ++_next_lend;
         _lent.push_back(loan{id, &q, std::move(item), asker, token});
-        spawn([id](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
-            co_await ctx.sleep(detail::lend_hold);
-            ctx.push<detail::LendExpired>(id);
-        });
         return id;
     }
 
@@ -806,7 +783,6 @@ public:
         registerEvent<detail::ExpectationDeadline>(*this);
         registerEvent<detail::ExpectationTaken>(*this);
         registerEvent<detail::ExpectationWithdrawn>(*this);
-        registerEvent<detail::LendExpired>(*this);
         if constexpr (!(std::is_same_v<qb::DownEvent, Events> || ...))
             registerEvent<qb::DownEvent>(*this); // the watch of the askers; a recorded DownEvent is registered above
         if constexpr (!(std::is_same_v<qb::KillEvent, Events> || ...))
@@ -885,15 +861,7 @@ public:
 
     void
     on(detail::ExpectationTaken const &e) {
-        if (std::erase_if(_lent, [&e](loan const &l) { return l.id == e.lend; }) != 0)
-            return;
-        // Acknowledged after its loan expired: the asker has it, so the copy given back must not be served again.
-        const auto late = std::find_if(_expired.begin(), _expired.end(), [&e](expired_loan const &x) { return x.id == e.lend; });
-        if (late == _expired.end())
-            return;
-        auto &received = late->from->received;
-        std::erase_if(received, [seq = late->seq](entry const &x) { return x.seq == seq; });
-        _expired.erase(late);
+        std::erase_if(_lent, [&e](loan const &l) { return l.id == e.lend; }); // the asker has it: the loan is over
     }
 
     void
@@ -935,17 +903,6 @@ public:
         }
         if (_ending && detail::probes().lost(id(), asker) == 0)
             kill(); // killed, and the last expectation it waited for went with its asker
-    }
-
-    void
-    on(detail::LendExpired const &e) {
-        const auto it = std::find_if(_lent.begin(), _lent.end(), [&e](loan const &l) { return l.id == e.lend; });
-        if (it == _lent.end())
-            return; // acknowledged, or withdrawn
-        _expired.push_back(expired_loan{it->id, it->from, it->item.seq});
-        if (_expired.size() > expired_memory)
-            _expired.pop_front();
-        give_back(it);
     }
 
     /// A kill. An asker waits for the probe's answer and for nothing else -- it times nothing itself -- so the probe

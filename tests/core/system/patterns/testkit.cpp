@@ -20,7 +20,7 @@
  * a probe on another core; a type the probe does not record; the exchanges a scenario asks other actors
  * with, registered by `run<Asks...>` (and the timeout without them, the reason the parameter exists); a
  * scenario that throws; the watchdog; an engine that refuses to start; one run per kit; the loan of an answered
- * event -- abandoned expectations withdrawn, loans given back at their rank, a late acknowledgement -- and the
+ * event -- abandoned expectations withdrawn, loans given back at their rank, a loan kept through a stall -- and the
  * probe's watch of its askers -- a killed asker's waiters and loans let go of, on its core and across cores, its
  * loans in arrival order -- with a probe of `qb::DownEvent` still recording the ones it is sent; and the probe's clock
  * as the only one -- a host that stalls past a window or a timeout changes no answer -- with a probe that is gone
@@ -40,6 +40,7 @@
 #include <stdexcept>
 #include <string>
 #include <thread>
+#include <utility>
 
 using namespace std::chrono_literals;
 
@@ -236,6 +237,30 @@ at_once() {
     co_return 1;
 }
 
+/// An asker that expects one fill through the kit -- so acknowledges it -- and tells `taken` its quantity.
+class Taker : public qb::Actor {
+    qb::ActorId _probe;
+    qb::ActorId _taken;
+
+public:
+    Taker(qb::ActorId probe, qb::ActorId taken)
+        : _probe(probe)
+        , _taken(taken) {}
+    qb::io::async::task<bool>
+    onInit() override {
+        registerEvent<qb::test::detail::Expectation>(*this);
+        spawn([probe = _probe, taken = _taken](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
+            const auto filled = co_await qb::test::expect<Filled>(ctx, probe, 30s);
+            ctx.push_to<Cancelled>(taken, filled ? filled->qty : -1);
+        });
+        co_return true;
+    }
+    void
+    on(qb::test::detail::Expectation &e) {
+        (void) resolve_ask(e);
+    }
+};
+
 /// Holds its core for the time it names: no pass runs there meanwhile -- a host that stalls, on demand.
 struct Stall : qb::Event {
     qb::duration held;
@@ -255,6 +280,48 @@ public:
         std::this_thread::sleep_for(s.held);
     }
 };
+
+/// Asks a `Feeder` to hold `staller`'s core for `held`, then to have `desk` fill one order.
+struct Feed : qb::Event {
+    qb::ActorId  desk;
+    qb::ActorId  staller;
+    qb::duration held;
+
+    Feed(qb::ActorId d, qb::ActorId s, qb::duration h)
+        : desk(d)
+        , staller(s)
+        , held(h) {}
+};
+
+/// Runs beside a probe: the stall it sends another core is ahead, in this core's pipe to it, of every answer the probe
+/// gives to the fill that follows -- that core reads the answer only once the stall is over, whatever the timing.
+class Feeder : public qb::Actor {
+public:
+    qb::io::async::task<bool>
+    onInit() override {
+        registerEvent<Feed>(*this);
+        co_return true;
+    }
+    void
+    on(Feed const &f) {
+        push<Stall>(f.staller, f.held);
+        push<Order>(f.desk, 1);
+    }
+};
+
+/// The quantity an expectation of a fill yielded (-1: none), and how long after `start` its asker read it.
+qb::io::async::task<std::pair<int, qb::duration>>
+fill_and_when(qb::ScopedCoroContext ctx, qb::ActorId probe, qb::duration timeout, steady::time_point start) {
+    const auto filled = co_await qb::test::expect<Filled>(ctx, probe, timeout);
+    co_return std::pair<int, qb::duration>{filled ? filled->qty : -1, steady::now() - start};
+}
+
+/// Has `feeder` stall `staller`'s core and fill one order, once the branches started before it have sent theirs.
+qb::io::async::task<void>
+feed_under_a_stall(qb::ScopedCoroContext ctx, qb::ActorId feeder, qb::ActorId desk, qb::ActorId staller, qb::duration held) {
+    ctx.push_to<Feed>(feeder, desk, staller, held);
+    co_return;
+}
 
 /// Stalls `staller`'s core once the branch started before it has sent its expectation: one ordered pipe carries both.
 qb::io::async::task<void>
@@ -819,8 +886,8 @@ TEST(TestKit, ATimeoutYieldsNothingNoEarlierThanItsDeadline) {
 
 TEST(TestKit, AnEventLentToAnAbandonedExpectationReturnsForTheNext) {
     // The losing branch of a when_any is destroyed: its expectation withdraws itself, so the next one gets the event
-    // (it was lost before the loan). The loan alone also passes this case, in lend_hold: the timing is pinned by
-    // AbandonedExpectationsAreWithdrawnSoTheNextGetsTheEventAtOnce.
+    // (it was lost before the loan; lent to a frame that is gone and never withdrawn, it would stay lent for good).
+    // AbandonedExpectationsAreWithdrawnSoTheNextGetsTheEventAtOnce pins the same with three of them.
     qb::test::TestKit kit;
     const auto        probe = kit.probe<Filled>(0);
     const auto        desk  = kit.add<Desk>(0, probe);
@@ -840,14 +907,24 @@ TEST(TestKit, AnEventLentToAnAbandonedExpectationReturnsForTheNext) {
 }
 
 TEST(TestKit, AnAcknowledgedEventDoesNotComeBack) {
+    // The acknowledgement ends the loan: what could still give the event back -- its asker's death, since no clock
+    // does -- finds nothing to give. An asker that expects through the kit (it acknowledges) takes the fill, then dies.
     qb::test::TestKit kit;
-    const auto        probe = kit.probe<Filled>(0);
-    const auto        desk  = kit.add<Desk>(0, probe);
-    const auto        run   = kit.run(
-        [desk, probe](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
+    const auto        probe   = kit.probe<Filled>(0);
+    const auto        desk    = kit.add<Desk>(0, probe);
+    const auto        taken   = kit.probe<Cancelled>(0);
+    const auto        deaths  = kit.probe<Cancelled>(0);
+    const auto        mourner = kit.add<Mourner>(0, deaths);
+    const auto        taker   = kit.add<Taker>(0, probe, taken);
+    const auto        run     = kit.run(
+        [desk, probe, taken, deaths, mourner, taker](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
             ctx.push_to<Order>(desk, 3);
-            EXPECT_TRUE((co_await qb::test::expect<Filled>(ctx, probe, 5s)).has_value());
-            EXPECT_TRUE(co_await qb::test::expect_none<Filled>(ctx, probe, qb::test::detail::lend_hold + 500ms))
+            const auto took = co_await qb::test::expect<Cancelled>(ctx, taken, 10s);
+            EXPECT_EQ(took ? took->qty : -1, 3) << "the taker's expectation yielded the fill, and acknowledged it";
+            ctx.push_to<Mourn>(mourner, taker);
+            ctx.push_to<qb::KillEvent>(taker);
+            EXPECT_TRUE((co_await qb::test::expect<Cancelled>(ctx, deaths, 10s)).has_value()) << "the taker is gone: the probe heard it first";
+            EXPECT_TRUE(co_await qb::test::expect_none<Filled>(ctx, probe, 100ms))
                 << "the expectation acknowledged its event: the loan is over";
         },
         30s);
@@ -1016,9 +1093,9 @@ TEST(TestKit, AKitRunsOnce) {
 }
 
 TEST(TestKit, AbandonedExpectationsAreWithdrawnSoTheNextGetsTheEventAtOnce) {
-    // Waiters abandoned by when_any losers stayed on the probe: each was lent the event in turn for lend_hold, so a
-    // live expectation behind three of them waited 6 s, and expect_none saw "absent" while the event sat with a
-    // dead waiter (the second review).
+    // Waiters abandoned by when_any losers stayed on the probe: each was lent the event in turn -- for two seconds,
+    // while a loan still timed out -- so a live expectation behind three of them waited 6 s, and expect_none saw
+    // "absent" while the event sat with a dead waiter (the second review).
     qb::test::TestKit kit;
     const auto        probe = kit.probe<Filled>(0);
     const auto        desk  = kit.add<Desk>(0, probe);
@@ -1041,7 +1118,7 @@ TEST(TestKit, AbandonedExpectationsAreWithdrawnSoTheNextGetsTheEventAtOnce) {
 
 TEST(TestKit, AKilledAskersWaitersAreLetGoOfAtOnce) {
     // A killed asker withdraws nothing (its scope is cancelled first): its two waiters stayed on the probe, each next
-    // event lent to them for lend_hold -- the starvation of abandoned expectations, on the kill path (the third
+    // event lent to them -- the starvation of abandoned expectations, on the kill path (the third
     // review). The probe watches its askers: at the asker's death its waiters are dropped.
     qb::test::TestKit kit;
     const auto        probe   = kit.probe<Filled>(0);
@@ -1068,8 +1145,8 @@ TEST(TestKit, AKilledAskersWaitersAreLetGoOfAtOnce) {
 }
 
 TEST(TestKit, WhatADeadAskerWasLentComesBackAtOnce) {
-    // The asker took the answer and died before it acknowledged it: the event came back only after lend_hold (the
-    // third review). Its DownEvent gives the loan back at once, at its rank.
+    // The asker took the answer and died before it acknowledged it: the event came back two seconds later, when its
+    // loan timed out (the third review). Its DownEvent gives the loan back, at its rank -- and nothing else would.
     qb::test::TestKit kit;
     const auto        probe   = kit.probe<Filled>(0);
     const auto        desk    = kit.add<Desk>(0, probe);
@@ -1242,21 +1319,27 @@ TEST(TestKit, ADeadAskersLoansReachAParkedWaiterInArrivalOrder) {
     EXPECT_TRUE(run) << run.describe();
 }
 
-TEST(TestKit, AnAcknowledgementAfterItsLoanExpiredTakesTheCopyGivenBack) {
-    // An answer the asker took after the loan expired -- its core stalled past lend_hold -- was served twice: the
-    // probe had given it back already (the second review). A raw ask stands for the late asker.
+TEST(TestKit, ALoanOutlastsAStallOfItsAsker) {
+    // A loan timed out after two seconds: under an asker whose core stalled past them the event went back to its queue
+    // while that asker still read its answer, and the next expectation was served it too -- one fill, two expectations
+    // yielding it. A loan ends by an event only. The probe, the desk and the feeder run on core 1; the feeder holds
+    // core 0 -- the asker's -- for 2.5 s, then has the desk fill: the stall is ahead of the answer in core 1's pipe.
     qb::test::TestKit kit;
-    const auto        probe = kit.probe<Filled>(0);
-    const auto        desk  = kit.add<Desk>(0, probe);
-    const auto        run   = kit.run(
-        [desk, probe](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
-            ctx.push_to<Order>(desk, 5);
-            co_await ctx.sleep(100ms);
-            const auto answer = co_await qb::ask(ctx, probe, qb::test::detail::Expectation{qb::type_id<Filled>(), {}, false, 0}, 1s);
-            EXPECT_NE(answer.lend, 0u);
-            co_await ctx.sleep(qb::test::detail::lend_hold + 300ms); // expired: given back
-            ctx.push_to<qb::test::detail::ExpectationTaken>(probe, answer.lend);
-            EXPECT_TRUE(co_await qb::test::expect_none<Filled>(ctx, probe, 200ms)) << "the late taker has it: not served again";
+    const auto        probe   = kit.probe<Filled>(1);
+    const auto        desk    = kit.add<Desk>(1, probe);
+    const auto        feeder  = kit.add<Feeder>(1);
+    const auto        staller = kit.add<Staller>(0);
+    const auto        run     = kit.run(
+        [probe, desk, feeder, staller](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
+            const auto start = steady::now();
+            auto [first, second, fed] =
+                co_await qb::io::async::when_all(fill_and_when(ctx, probe, 4s, start), qb::test::expect<Filled>(ctx, probe, 4s),
+                                                 feed_under_a_stall(ctx, feeder, desk, staller, 2500ms));
+            (void) fed;
+            EXPECT_EQ(first.first, 1) << "the oldest expectation takes the one fill";
+            EXPECT_GE(first.second, 2500ms) << "its asker read the answer once the stall was over: two seconds and more after the loan";
+            EXPECT_FALSE(second.has_value()) << "ONE fill was sent: the second expectation was served qty " << (second ? second->qty : -1);
+            EXPECT_FALSE((co_await qb::test::expect<Filled>(ctx, probe, 0s)).has_value()) << "and none is recorded again";
         },
         30s);
     EXPECT_TRUE(run) << run.describe();
@@ -1276,8 +1359,8 @@ TEST(TestKit, ATimeoutOfMaxIsNoDeadlineNotAnOverflow) {
 }
 
 TEST(TestKit, AnExpectationWithdrawnAfterItsAnswerGivesTheEventBackAtOnce) {
-    // The probe answered (the event lent) before the withdrawal reached it: the withdrawal gives the loan back at once,
-    // not after lend_hold.
+    // The probe answered (the event lent) before the withdrawal reached it: the withdrawal gives the loan back -- and
+    // nothing else would, while its asker lives.
     qb::test::TestKit kit;
     const auto        probe = kit.probe<Filled>(0);
     const auto        desk  = kit.add<Desk>(0, probe);
