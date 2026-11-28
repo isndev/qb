@@ -449,8 +449,9 @@ class expectation_scope;
  *            returned -- a watch's answer with the rest -- and replays it, in order, once the actor is active (the
  *            order a watch promises: behind all that the watched actor's core had sent). While its `Asker` is
  *            activating, therefore, no expectation of it is ended by the watch: the answer is replayed when the
- *            `onInit()` returns, and ends then an expectation still waiting (one that a coroutine spawned in the
- *            `onInit()` asked). The `onInit()`'s own expectation cannot outlive the `onInit()`: it ends by the
+ *            `onInit()` returns `true`, and ends then an expectation still waiting (one that a coroutine spawned in
+ *            the `onInit()` asked); an `onInit()` that fails removes its asker, and that expectation ends with
+ *            `cancelled_error`. The `onInit()`'s own expectation cannot outlive the `onInit()`: it ends by the
  *            probe's own answer, a `qb::KillEvent`'s included (an answer to an ask passes the hold), by the asker's
  *            kill, or by its core's activation deadline. With that deadline off (`activation_deadline_ns = 0`), a
  *            probe that ends without a word leaves it waiting until the engine stops.
@@ -507,7 +508,8 @@ public:
     /// The answer of a watch -- the core's own, whose source is the actor it names: a `qb::DownEvent` another actor
     /// sends this one ends nothing. Whatever ended the probe ends the scope: a probe that a `qb::KillEvent` ended has
     /// answered every expectation ahead of this, and one that stops with its engine stops with this actor -- told
-    /// two passes later, an expectation that the stop reaches first is told nothing (`detail::gone`).
+    /// three passes later (the cancelled expectation resumes a pass later, then `detail::gone` waits two), an
+    /// expectation that the stop reaches first is told nothing.
     void
     on(qb::DownEvent const &e) {
         if (e.getSource() != e.watched)
@@ -529,8 +531,9 @@ namespace detail {
  *          with `child_token()` and cancels. The asker's own scope -- the actor's, cancelled when it is killed --
  *          ends it whatever scope the caller gave, and it is also what tells, after the expectation resumes, that the
  *          asker lives: `expect` holds a copy of that token, and reads the watch through the state the asker shares
- *          with it, so nothing reads the actor, which may be gone by then. It costs one allocation an expectation:
- *          the child token of the caller's scope.
+ *          with it, so nothing reads the actor, which may be gone by then. It costs one allocation an expectation,
+ *          the child token of the caller's scope -- and, on an asker's first expectation on a probe, the watch of it:
+ *          its shared state, the asker's record of it, the core's.
  */
 class expectation_scope {
 public:
@@ -754,8 +757,10 @@ namespace detail {
 /// take every one, so a probe of one of them would record nothing. And the engine's default events but `qb::KillEvent`
 /// (`qb::default_events_t`): a probe registers a handler for each type it records, and that one would replace the
 /// handler every actor has -- a probe of `qb::SignalEvent` would record the stop of its engine and stay, and no join of
-/// that engine, `TestKit::run()`'s included, would ever return; one of `qb::PingEvent` would answer no `qb::ping`, one of
-/// `qb::RequireEvent` no discovery. A probe records `qb::KillEvent` on purpose, and ends with its engine then.
+/// that engine, `TestKit::run()`'s included, would ever return; one of `qb::PingEvent` would answer no `qb::ping`. One of
+/// `qb::RequireEvent` would take the replies to its own `qb::ping` / `qb::require` (a probe asks none), one of
+/// `qb::UnregisterCallbackEvent` its own callbacks' removal (it has none): refused all the same, so that the rule has
+/// one exception. A probe records `qb::KillEvent` on purpose, and ends with its engine then.
 template <typename E>
 concept never_recorded = std::is_same_v<E, Expectation> || std::is_same_v<E, ExpectationDeadline> || std::is_same_v<E, ExpectationTaken>
                          || std::is_same_v<E, ExpectationWithdrawn> || (qb::is_default_event<E> && !std::is_same_v<E, qb::KillEvent>);
@@ -883,9 +888,9 @@ gone(qb::io::async::cancellation_token own, qb::ScopedCoroContext ctx, char cons
  *          its engine, its askers stop with it; on a core that stops on an error -- an exception out of a handler --
  *          it can send nothing; `kill()` called on it through a handle skips the handler. Its askers hear all three,
  *          once they are active: an `Asker` watches the probes it expects on, and a watch is answered whatever ended
- *          the probe, behind all
- *          that its core sent. The expectations of that asker waiting on the probe, or on their way to it, then throw
- *          `probe_gone_error`, and so does the next `expect` -- two passes of the asker's core later, and only when
+ *          the probe, behind all that its core sent. The expectations of that asker waiting on the probe, or on their
+ *          way to it, then throw `probe_gone_error`, and so does the next `expect` -- two passes of the asker's core
+ *          after the census refused it, three after the watch's answer was read, and only when
  *          the asker is still there: an engine that stops takes a probe a pass or two ahead of an asker on another
  *          core, and such an asker is told that it is cancelled, never that its probe is gone (`detail::gone`). An
  *          answer goes to its asker whatever became of it: to one that died meanwhile it is a dead letter on that

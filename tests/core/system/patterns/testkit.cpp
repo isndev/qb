@@ -89,7 +89,7 @@ static_assert(!a_probe_records<qb::test::detail::ExpectationWithdrawn>, "a withd
 // The engine's other default events: a probe's handler of one would take the place of the one every actor has -- a probe
 // of `qb::PingEvent` answered no `qb::ping`. `qb::KillEvent` is the one the kit records on purpose.
 static_assert(!a_probe_records<qb::PingEvent>, "a probe that records qb::PingEvent answers no ping");
-static_assert(!a_probe_records<qb::RequireEvent>, "a probe that records qb::RequireEvent answers no discovery");
+static_assert(!a_probe_records<qb::RequireEvent>, "an engine's default event is not a recorded type: qb::RequireEvent");
 static_assert(!a_probe_records<qb::UnregisterCallbackEvent>, "an engine's default event is not a recorded type");
 // A type named twice was recorded into one of its queues and expected from the other: a fill sent was never yielded.
 static_assert(!a_probe_records<Filled, Filled>, "a type is named once");
@@ -541,7 +541,7 @@ fill_behind_the_reminders(qb::ScopedCoroContext ctx, qb::ActorId probe, qb::Acto
     fed->open.store(true);
 }
 
-/// What `told` -- a probe of `Cancelled` -- was told next, or -1.
+/// What `told` -- a probe of `Cancelled` -- was told next. It waits for as long as the run lasts.
 qb::io::async::task<int>
 next_told(qb::ScopedCoroContext ctx, qb::ActorId told) {
     const auto said = co_await qb::test::expect<Cancelled>(ctx, told, until_it_comes);
@@ -597,7 +597,7 @@ kill_once_it_waits(qb::ScopedCoroContext ctx, qb::ActorId asker, qb::ActorId tol
 /// as a `qb::KillEvent` ended it; `refused` when the census held no probe at the id and nothing was sent; `gone` when
 /// the asker's watch of the probe was answered. The three throw the same error, and a case that is about WHO tells an
 /// expectation has to read which: with every asker watching its probes, each end is also told by the watch.
-enum class verdict { none = -1, quiet, arrival, gone, killed, refused };
+enum class verdict { quiet, arrival, gone, killed, refused };
 
 [[nodiscard]] inline verdict
 gone_how(qb::test::probe_gone_error const &e) {
@@ -961,7 +961,7 @@ public:
     }
 };
 
-/// Has its core end once the probe a `Mourn` names is watched: it watches that probe and tells `thrower` -- an actor of
+/// Ends the core of the probe a `Mourn` names once that probe is watched: it watches that probe and tells `thrower` -- an actor of
 /// the probe's core -- to throw, in the one pipe from this core to that one, in that order. It tells `report` -- a probe
 /// of `Cancelled` -- why the probe is gone (the `qb::DownReason`, as an int).
 class WatchThenBoom : public qb::Actor {

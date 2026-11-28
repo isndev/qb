@@ -973,19 +973,19 @@ policy.
   core -- where the asker's own clock once came back empty after the window. `qb::test::Asker` (new) is the actor that
   expects: it registers and routes the exchange, and it watches every probe it expects on. A watch is answered
   whatever ended the probe, behind all that its core had sent, and the expectations of that asker on that probe then
-  throw `probe_gone_error` -- told two passes later, so an asker that stops with its probe is still told nothing (the
-  entry below). That is for an asker that is active: a core holds back what reaches an actor whose `onInit()` has not
-  returned, a watch's answer with the rest, and replays it in order once the actor is active -- the order a watch
+  throw `probe_gone_error` -- told three passes later, so an asker that stops with its probe is still told nothing
+  (the entry below). That is for an asker that is active: a core holds back what reaches an actor whose `onInit()` has
+  not returned, a watch's answer with the rest, and replays it in order once the actor is active -- the order a watch
   promises -- so while an `Asker` is activating the watch ends none of its expectations: the answer is replayed when
-  the `onInit()` returns, and ends then one still waiting, which a coroutine spawned there asked; the `onInit()`'s own
-  ends with the probe's own answer (a killed probe's included), the asker's kill or the activation deadline, and
-  `AnExpectationAskedInAnOnInitIsNotEndedByTheWatchOfItsProbe` pins it (the reviews that followed found the claim
-  stated without that limit, then the limit stated too wide). The kit's driver is an `Asker`; an actor of a test that
-  expects itself derives from it instead of `qb::Actor`, and `expect` / `expect_none` from any other actor throw
-  `std::logic_error` where they are called, nothing sent. For a test written against the kit as it was: an asker that
-  registered `qb::test::detail::Expectation` by hand derives from `Asker` and drops the registration and its handler,
-  and one that registers `qb::DownEvent` for itself hands the ones it does not expect to `Asker::on`. Proven by four
-  cases. A probe ended through a handle under a window and an expectation of the scenario: both waited for the
+  the `onInit()` returns `true`, and ends then one still waiting, which a coroutine spawned there asked; the
+  `onInit()`'s own ends with the probe's own answer (a killed probe's included), the asker's kill or the activation
+  deadline, and `AnExpectationAskedInAnOnInitIsNotEndedByTheWatchOfItsProbe` pins it (the reviews that followed found
+  the claim stated without that limit, then the limit stated too wide). The kit's driver is an `Asker`; an actor of a
+  test that expects itself derives from it instead of `qb::Actor`, and `expect` / `expect_none` from any other actor
+  throw `std::logic_error` where they are called, nothing sent. For a test written against the kit as it was: an asker
+  that registered `qb::test::detail::Expectation` by hand derives from `Asker` and drops the registration and its
+  handler, and one that registers `qb::DownEvent` for itself hands the ones it does not expect to `Asker::on`. Proven
+  by four cases. A probe ended through a handle under a window and an expectation of the scenario: both waited for the
   watchdog. An asker that is not the driver, on a probe whose core stops:
   `AnExpectationOfAnotherActorOnAProbeWhoseCoreStopsGetsNoVerdict` pinned that it waited, it is told now, and the case
   is `AnAskerThatIsNotTheDriverIsToldWhenItsProbesCoreStops`. An asker that outlives the stop of its engine. And an
