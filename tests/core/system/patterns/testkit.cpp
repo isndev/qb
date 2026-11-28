@@ -1076,6 +1076,76 @@ public:
     }
 };
 
+/// What an expectation of a fill on `probe`, a window of an hour asked in `ctx`, ended with: 1 `cancelled_error`, 2 a
+/// fill, 3 none, 4 `probe_gone_error`, 5 anything else.
+qb::io::async::task<int>
+what_a_fill_ended_with(qb::ScopedCoroContext ctx, qb::ActorId probe) {
+    try {
+        const auto filled = co_await qb::test::expect<Filled>(ctx, probe, std::chrono::hours(1));
+        co_return filled ? 2 : 3;
+    } catch (qb::io::async::cancelled_error const &) {
+        co_return 1;
+    } catch (qb::test::probe_gone_error const &) {
+        co_return 4;
+    } catch (...) {
+        co_return 5;
+    }
+}
+
+/// Cancels the scope of `ctx` once the branches started before it have sent their expectations.
+qb::io::async::task<void>
+cancel_now(qb::ScopedCoroContext ctx) {
+    auto scope = ctx.token();
+    scope.cancel();
+    co_return;
+}
+
+/// An asker that expects in a scope of its own making, a child of its actor's (`child_token()`), cancels that scope
+/// once the expectation is sent, and tells `told` what the expectation ended with (see `what_a_fill_ended_with`).
+class InASubScope : public qb::test::Asker {
+    qb::ActorId _probe;
+    qb::ActorId _told;
+
+public:
+    InASubScope(qb::ActorId probe, qb::ActorId told)
+        : _probe(probe)
+        , _told(told) {}
+    qb::io::async::task<bool>
+    onInit() override {
+        const qb::ScopedCoroContext sub{this, context().child_token()};
+        spawn([probe = _probe, told = _told, sub](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
+            auto [ended, cancelled] = co_await qb::io::async::when_all(what_a_fill_ended_with(sub, probe), cancel_now(sub));
+            (void) cancelled;
+            ctx.push_to<Cancelled>(told, ended);
+        });
+        co_return true;
+    }
+};
+
+/// An asker that expects in a scope that is not its actor's at all (a token of its own), tells `sent` once the
+/// expectation has left, and records what it ended with in `ended` -- its actor may be gone by then.
+class InAScopeOfItsOwn : public qb::test::Asker {
+    qb::ActorId                       _probe;
+    qb::ActorId                       _sent;
+    std::shared_ptr<std::atomic<int>> _ended;
+
+public:
+    InAScopeOfItsOwn(qb::ActorId probe, qb::ActorId sent, std::shared_ptr<std::atomic<int>> ended)
+        : _probe(probe)
+        , _sent(sent)
+        , _ended(std::move(ended)) {}
+    qb::io::async::task<bool>
+    onInit() override {
+        const qb::ScopedCoroContext loose{this, qb::io::async::cancellation_token{}};
+        spawn([probe = _probe, sent = _sent, ended = _ended, loose](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
+            auto [said, told] = co_await qb::io::async::when_all(what_a_fill_ended_with(loose, probe), tell_now(ctx, sent, 1));
+            (void) told;
+            ended->store(said);
+        });
+        co_return true;
+    }
+};
+
 /// The activation deadline of a case whose actors expect in their `onInit()`. A core fails an actor whose `onInit()`
 /// has not returned when that deadline passes -- five seconds by default, counted from the moment the actor is built --
 /// and an expectation asked there ends with it: a host that stalls for those seconds before the engine has started
@@ -2277,6 +2347,55 @@ TEST(TestKit, AnAskerThatOutlivesTheStopOfItsEngineIsToldItsProbeIsGone) {
         60s);
     EXPECT_TRUE(run) << run.describe();
     EXPECT_EQ(heard->load(), static_cast<int>(verdict::gone)) << "-2: it waited on a probe its engine's stop had ended, until it gave up";
+}
+
+TEST(TestKit, AnExpectationEndsWithTheScopeItIsAskedIn) {
+    // An expectation is asked in the context it is given: a scope its asker made for a part of its work
+    // (`child_token()`) and cancels ends it, as it ends a `sleep`. It was asked in a scope of the asker's own instead --
+    // its actor's, and its watch of the probe -- and a window of an hour ran its hour after its scope was cancelled.
+    // The waiter it left on the probe is withdrawn too: the fill sent next goes to the next expectation, not to a waiter
+    // nobody reads any more (it would be lent there, and kept for as long as the asker lives).
+    qb::test::TestKit kit;
+    const auto        probe = kit.probe<Filled>(1);
+    const auto        told  = kit.probe<Cancelled>(1);
+    const auto        desk  = kit.add<Desk>(1, probe);
+    (void) kit.add<InASubScope>(1, probe, told);
+    const auto run = kit.run(
+        [probe, told, desk](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
+            EXPECT_EQ(co_await next_told(ctx, told), 1) << "-1: the expectation outlived its scope; 2, 3, 4: it was answered";
+            ctx.push_to<Order>(desk, 7); // behind the withdrawal, in the pipe of the asker's core: told was told after it
+            const auto filled = co_await qb::test::expect<Filled>(ctx, probe, qb::duration::max());
+            EXPECT_EQ(filled ? filled->qty : -1, 7);
+        },
+        30s);
+    EXPECT_TRUE(run) << run.describe();
+}
+
+TEST(TestKit, AnAskerKilledWhileItExpectsInAScopeNotItsActorsIsToldItWasCancelled) {
+    // A context whose scope is not its actor's is no proof that the actor lives. The asker below is killed while it
+    // expects in one: `expect` read that scope, took the asker for alive, and read the watch it kept of its probe --
+    // in an actor that was gone (ASan: use-after-poison) -- to tell it, two passes later, that its probe had ended
+    // "without a word". The probe was alive. An expectation knows its asker by the asker's own scope.
+    const auto        ended = std::make_shared<std::atomic<int>>(0);
+    qb::test::TestKit kit;
+    const auto        probe   = kit.probe<Filled>(1);
+    const auto        sent    = kit.probe<Cancelled>(1);
+    const auto        deaths  = kit.probe<Cancelled>(0);
+    const auto        mourner = kit.add<Mourner>(0, deaths);
+    const auto        asker   = kit.add<InAScopeOfItsOwn>(1, probe, sent, ended);
+    const auto        run     = kit.run(
+        [probe, sent, deaths, mourner, asker, ended](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
+            EXPECT_EQ(co_await next_told(ctx, sent), 1) << "the expectation waits on the probe";
+            ctx.push_to<Mourn>(mourner, asker);
+            ctx.push_to<qb::KillEvent>(asker);
+            EXPECT_TRUE((co_await qb::test::expect<Cancelled>(ctx, deaths, qb::duration::max())).has_value()) << "the asker is gone";
+            while (ended->load() == 0)
+                co_await ctx.sleep(1ms); // its coroutine resumes once its actor is gone: the run's watchdog bounds this
+            EXPECT_TRUE(co_await qb::test::expect_none<Filled>(ctx, probe, 0s)) << "the probe is alive, and holds nothing";
+        },
+        30s);
+    EXPECT_TRUE(run) << run.describe();
+    EXPECT_EQ(ended->load(), 1) << "4: told its probe was gone; 0: it never ended; 2, 3: answered";
 }
 
 TEST(TestKit, AnActorThatIsNoAskerIsRefusedWhereItExpects) {

@@ -381,24 +381,27 @@ probes() noexcept {
 }
 
 /// Withdraws the expectation `token` from `probe` when its frame ends without taking the answer -- unwound by a
-/// `when_any` that another branch won, destroyed -- so what the probe holds for it goes to the next
-/// expectation at once. A killed asker pushes nothing (its scope is cancelled before its frames
-/// end, and its core may be tearing down): the probe watches its askers and lets go of a dead one's itself.
+/// `when_any` that another branch won, destroyed, ended by the scope it was asked in -- so what the probe holds for it
+/// goes to the next expectation at once. A killed asker pushes nothing -- its own scope (`own`, the actor's, whatever
+/// scope `ctx` carries) is cancelled before its frames end, and its core may be tearing down: the probe watches its
+/// askers and lets go of a dead one's itself.
 struct WithdrawOnExit {
-    qb::ScopedCoroContext ctx;
-    qb::ActorId           probe;
-    std::uint64_t         token;
-    bool                  armed = true;
+    qb::ScopedCoroContext             ctx;
+    qb::io::async::cancellation_token own;
+    qb::ActorId                       probe;
+    std::uint64_t                     token;
+    bool                              armed = true;
 
-    WithdrawOnExit(qb::ScopedCoroContext c, qb::ActorId p, std::uint64_t t)
+    WithdrawOnExit(qb::ScopedCoroContext c, qb::io::async::cancellation_token o, qb::ActorId p, std::uint64_t t)
         : ctx(std::move(c))
+        , own(std::move(o))
         , probe(p)
         , token(t) {}
     WithdrawOnExit(WithdrawOnExit const &)            = delete;
     WithdrawOnExit &operator=(WithdrawOnExit const &) = delete;
 
     ~WithdrawOnExit() {
-        if (armed && !ctx.cancelled())
+        if (armed && !own.is_cancelled())
             ctx.push_to<ExpectationWithdrawn>(probe, token);
     }
 };
@@ -417,7 +420,14 @@ inline constexpr char const *probe_ended_unheard =
 inline constexpr char const *no_asker =
     "qb::test: this actor is no qb::test::Asker -- only an Asker hears a probe's answer; derive the actor from it";
 
-struct asker_scope;
+/// What an `Asker` knows of a probe it watches, shared with the expectations it asks of that probe: they read it after
+/// they resume, when the actor may be gone.
+struct watch_state {
+    qb::io::async::cancellation_token ended;         ///< Cancelled when the watch of the probe is answered
+    char const                       *met = nullptr; ///< What the expectations it ends are told
+};
+
+class expectation_scope;
 
 } // namespace detail
 
@@ -434,42 +444,36 @@ struct asker_scope;
  *            stops on an exception out of a handler -- and a watch is answered whatever ended it, behind everything
  *            its core had sent: the expectations of this actor that wait on that probe, or are on their way to it,
  *            then throw `probe_gone_error`. No expectation of an `Asker` outlives its probe.
+ *          An expectation ends, too, with the scope of the context it is asked in -- the actor's, or one it made for a
+ *          part of its work (`child_token()`) and cancels: `cancelled_error`, and its waiter is withdrawn from the
+ *          probe -- and with the asker's kill, whatever scope that context carries (`detail::expectation_scope`).
  *          It registers `detail::Expectation` and `qb::DownEvent` in its constructor. A derived actor that registers
  *          `qb::DownEvent` for itself takes the place of the handler here: it hands every one it does not expect to
  *          `Asker::on(qb::DownEvent const &)`.
  */
 class Asker : public qb::Actor {
-    friend struct detail::asker_scope;
+    friend class detail::expectation_scope;
 
-    /// A probe this actor expects on, and the scope its expectations on it are asked in.
+    /// A probe this actor expects on, and what its watch of it said.
     struct watched {
-        qb::ActorId                       probe;
-        qb::io::async::cancellation_token ended;         ///< Cancelled when the watch of the probe is answered
-        char const                       *met = nullptr; ///< What the expectations it ends are told
+        qb::ActorId                          probe;
+        std::shared_ptr<detail::watch_state> state;
     };
     std::vector<watched> _watched;
 
-    /// The context an expectation of this actor on `probe` is asked in: a child of the actor's own scope, cancelled
-    /// when the watch of the probe is answered -- the expectations waiting in it end, and `expect` reads which of the
-    /// two scopes ended. A probe that a kit announced and its core has not built yet -- an `onInit()` that runs while
-    /// another core still builds its actors -- is watched like any other: the watch waits in the pipe to that core
-    /// with the expectation, and a core builds every actor it was given before it turns its first pass. (On the
-    /// asker's own core the probe exists already: a core builds all its actors, then runs their `onInit()`.)
-    [[nodiscard]] qb::ScopedCoroContext
+    /// The watch of `probe`, sent ahead of this actor's first expectation on it in the one pipe to the probe's core. A
+    /// probe that a kit announced and its core has not built yet -- an `onInit()` that runs while another core still
+    /// builds its actors -- is watched like any other: the watch waits in that pipe with the expectation, and a core
+    /// builds every actor it was given before it turns its first pass. (On the asker's own core the probe exists
+    /// already: a core builds all its actors, then runs their `onInit()`.)
+    [[nodiscard]] std::shared_ptr<detail::watch_state>
     watching(qb::ActorId probe) {
         auto it = std::find_if(_watched.begin(), _watched.end(), [probe](watched const &w) { return w.probe == probe; });
         if (it == _watched.end()) {
-            it = _watched.insert(_watched.end(), watched{probe, context().child_token()});
-            watch(probe); // ahead of the first expectation, in the one pipe to the probe's core
+            it = _watched.insert(_watched.end(), watched{probe, std::make_shared<detail::watch_state>()});
+            watch(probe);
         }
-        return qb::ScopedCoroContext{this, it->ended};
-    }
-
-    /// What the expectations that the watch of `probe` ended are told.
-    [[nodiscard]] char const *
-    ended(qb::ActorId probe) const noexcept {
-        const auto it = std::find_if(_watched.begin(), _watched.end(), [probe](watched const &w) { return w.probe == probe; });
-        return it != _watched.end() && it->met != nullptr ? it->met : detail::probe_ended_unheard;
+        return it->state;
     }
 
 protected:
@@ -500,22 +504,77 @@ public:
         const auto it = std::find_if(_watched.begin(), _watched.end(), [&e](watched const &w) { return w.probe == e.watched; });
         if (it == _watched.end())
             return;
-        it->met = e.reason == qb::DownReason::core_stopped ? detail::probe_core_stopped : detail::probe_ended_unheard;
-        it->ended.cancel();
+        it->state->met = e.reason == qb::DownReason::core_stopped ? detail::probe_core_stopped : detail::probe_ended_unheard;
+        it->state->ended.cancel();
     }
 };
 
 namespace detail {
 
-/// The kit's way into an `Asker`: `expect` and `expect_none` ask through it.
-struct asker_scope {
-    [[nodiscard]] static qb::ScopedCoroContext
-    watching(Asker &asker, qb::ActorId probe) {
-        return asker.watching(probe);
+/**
+ * @brief The scope an expectation is asked in: a child of the scope of the context it is given, cancelled too by its
+ *        asker's own scope and by the asker's watch of the probe -- whichever ends first ends the expectation.
+ * @details The caller's scope is the one a `sleep` in it would end with: the actor's, or a part of its work it made
+ *          with `child_token()` and cancels. The asker's own scope -- the actor's, cancelled when it is killed --
+ *          ends it whatever scope the caller gave, and it is also what tells, after the expectation resumes, that the
+ *          asker lives: `expect` holds a copy of that token, and reads the watch through the state the asker shares
+ *          with it, so nothing reads the actor, which may be gone by then.
+ */
+class expectation_scope {
+public:
+    /// The asker's own scope: its actor's, cancelled when it is killed.
+    [[nodiscard]] static qb::io::async::cancellation_token
+    own(Asker &asker) {
+        return asker.context().token();
     }
-    [[nodiscard]] static char const *
-    ended(Asker const &asker, qb::ActorId probe) noexcept {
-        return asker.ended(probe);
+
+    expectation_scope(Asker &asker, qb::ActorId probe, qb::ScopedCoroContext const &ctx, qb::io::async::cancellation_token own)
+        : _own(std::move(own))
+        , _watch(asker.watching(probe))
+        , _mine(ctx.child_token())
+        , _asking(&asker, _mine) {
+        _on_own.fire   = &expectation_scope::cancel_mine;
+        _on_own.ctx    = this;
+        _on_watch.fire = &expectation_scope::cancel_mine;
+        _on_watch.ctx  = this;
+        (void) _own.link(_on_own);            // fires at once when the scope is cancelled already
+        (void) _watch->ended.link(_on_watch); // likewise, when the watch was answered already
+    }
+    expectation_scope(expectation_scope const &)            = delete;
+    expectation_scope(expectation_scope &&)                 = delete;
+    expectation_scope &operator=(expectation_scope const &) = delete;
+    expectation_scope &operator=(expectation_scope &&)      = delete;
+    ~expectation_scope() {
+        _on_watch.unlink();
+        _on_own.unlink();
+    }
+
+    /// The context the expectation is asked in.
+    [[nodiscard]] qb::ScopedCoroContext const &
+    asking() const noexcept {
+        return _asking;
+    }
+    /// What an expectation the watch ended is told.
+    [[nodiscard]] char const *
+    ended() const noexcept {
+        return _watch->met != nullptr ? _watch->met : probe_ended_unheard;
+    }
+
+private:
+    qb::io::async::cancellation_token              _own;
+    std::shared_ptr<watch_state>                   _watch;
+    qb::io::async::cancellation_token              _mine;
+    qb::ScopedCoroContext                          _asking;
+    qb::io::async::cancellation_token::cancel_hook _on_own{};
+    qb::io::async::cancellation_token::cancel_hook _on_watch{};
+
+    static void
+    cancel_mine(void *self) noexcept {
+        try {
+            static_cast<expectation_scope *>(self)->_mine.cancel();
+        } catch (...) {
+            // a cancellation callback that throws: the awaiters' hooks have fired, the expectation ends all the same
+        }
     }
 };
 
@@ -739,14 +798,15 @@ private:
  *          very pass: two passes of the asker's core after the probe was found gone, a stop that took the probe has
  *          reached the asker. It is then cancelled, and that is what it is told; an asker still there is told the
  *          probe is gone.
+ * @param own The asker's own scope (`expectation_scope::own`): it tells whether the asker lives, whatever `ctx` is.
  * @return The error to throw.
- * @throws qb::io::async::cancelled_error when the asker ended meanwhile.
+ * @throws qb::io::async::cancelled_error when the asker ended meanwhile, or the scope of `ctx` did.
  */
 [[nodiscard]] inline qb::io::async::task<probe_gone_error>
-gone(qb::ScopedCoroContext ctx, char const *met) {
+gone(qb::io::async::cancellation_token own, qb::ScopedCoroContext ctx, char const *met) {
     co_await asker_pass{}; // resumes ahead of the receive that reads a stop raised before the probe went
     co_await asker_pass{}; // and behind it
-    if (ctx.cancelled())
+    if (own.is_cancelled() || ctx.cancelled())
         throw qb::io::async::cancelled_error();
     co_return probe_gone_error(met);
 }
@@ -1113,7 +1173,10 @@ public:
  *         it is answered). A probe found gone is told two passes of the asker's core later, no window waited: by then a
  *         stop of the engine that took the probe has reached the asker, which is cancelled instead.
  * @throws qb::io::async::cancelled_error when the asking actor is killed, before or meanwhile -- by a stop of its
- *         engine too, which is why a run that ends well prints nothing for an expectation asked as it stops.
+ *         engine too, which is why a run that ends well prints nothing for an expectation asked as it stops -- and
+ *         when the scope of @p ctx is cancelled meanwhile: an expectation ends with the scope it is asked in, as a
+ *         `sleep` does, and its waiter is withdrawn from the probe. The asker's kill ends it whatever scope @p ctx
+ *         carries, and is told as such.
  * @note Under a `when_any` an expectation that throws WINS the race, and the exception stays in the result: read the
  *       winner with `get<T>()` (it rethrows) or test `has_exception()` -- `index` alone does not tell an answer from an
  *       error. Out of a `spawn` body of an actor that is not the kit's driver, the error is reported and dropped.
@@ -1139,28 +1202,37 @@ expect(qb::ScopedCoroContext ctx, qb::ActorId probe, qb::duration timeout) {
     Asker *const asker = detail::probes().asker(ctx.id());
     if (asker == nullptr)
         throw std::logic_error(detail::no_asker); // it would never hear the answer, and nothing else ends the wait
+    // The asker's own scope: the one sure word, after a suspension, that the actor lives -- `ctx` may be any scope.
+    const auto own = detail::expectation_scope::own(*asker);
+    if (own.is_cancelled())
+        throw qb::io::async::cancelled_error();
     if (!detail::probes().departs(probe, ctx.id()))
-        throw co_await detail::gone(ctx, detail::no_live_probe); // nothing sent: nothing would answer
+        throw co_await detail::gone(own, ctx, detail::no_live_probe); // nothing sent: nothing would answer
     // Counted as sent from here. Nothing below stops before the expectation is in the pipe but a failed allocation,
     // and a count that never arrives ends with its asker: a killed probe watches the askers it waits for.
-    const auto             wait  = timeout > qb::duration::zero() ? timeout : qb::duration::zero();
-    const auto             token = ++detail::expectation_tokens;
-    detail::WithdrawOnExit withdraw{ctx, probe, token};
+    const auto                wait  = timeout > qb::duration::zero() ? timeout : qb::duration::zero();
+    const auto                token = ++detail::expectation_tokens;
+    detail::WithdrawOnExit    withdraw{ctx, own, probe, token};
+    detail::expectation_scope scope{*asker, probe, ctx, own}; // no read of `asker` past this line
     // No deadline of the asker's (zero: `qb::ask` waits for the reply): the probe's clock is the only one. A timeout
     // of its own here -- the probe's wait plus a grace -- came due in the same pass as a late answer, and ran first.
     std::optional<detail::Expectation> met;
     char const                        *ended = nullptr;
     try {
-        met.emplace(co_await qb::ask(detail::asker_scope::watching(*asker, probe), probe,
-                                     detail::Expectation{qb::type_id<E>(), wait, false, token, true}, qb::duration::zero()));
+        met.emplace(
+            co_await qb::ask(scope.asking(), probe, detail::Expectation{qb::type_id<E>(), wait, false, token, true}, qb::duration::zero()));
     } catch (qb::io::async::cancelled_error const &) {
-        withdraw.armed = false; // nobody is left to withdraw from, or to withdraw
+        if (own.is_cancelled()) {
+            withdraw.armed = false; // the asker is being killed: the probe lets go of what waits for it
+            throw;
+        }
         if (ctx.cancelled())
-            throw;                                         // the asker is being killed
-        ended = detail::asker_scope::ended(*asker, probe); // the scope it watches the probe in ended alone: it lives
+            throw;              // the caller's scope ended it: withdrawn as the frame ends, the asker lives
+        withdraw.armed = false; // the watch: the probe is gone, nothing to withdraw from
+        ended          = scope.ended();
     }
     if (ended != nullptr)
-        throw co_await detail::gone(ctx, ended);
+        throw co_await detail::gone(own, ctx, ended);
     auto const &answer = *met;
     withdraw.armed     = false; // answered: the probe holds nothing more for it
     if (answer.gone)
@@ -1186,7 +1258,8 @@ expect(qb::ScopedCoroContext ctx, qb::ActorId probe, qb::duration timeout) {
  * @throws std::logic_error when the probe does not record `E`, and when the asking actor is no `Asker` (see `expect`).
  * @throws qb::test::probe_gone_error when no live probe holds @p probe (no window waited), and when the probe ends
  *         meanwhile, however it ends (see `expect`): neither true nor false stands for a probe that is gone.
- * @throws qb::io::async::cancelled_error when the asking actor is killed, before or meanwhile.
+ * @throws qb::io::async::cancelled_error when the asking actor is killed, before or meanwhile, and when the scope of
+ *         @p ctx is cancelled meanwhile (see `expect`).
  * @note A probe that ends otherwise than by a `qb::KillEvent` answers nobody itself: see `expect`.
  * @note From an `onInit()`, the asker core's activation deadline ends the window: see `expect`.
  */
@@ -1199,25 +1272,33 @@ expect_none(qb::ScopedCoroContext ctx, qb::ActorId probe, qb::duration window) {
     Asker *const asker = detail::probes().asker(ctx.id());
     if (asker == nullptr)
         throw std::logic_error(detail::no_asker);
+    const auto own = detail::expectation_scope::own(*asker);
+    if (own.is_cancelled())
+        throw qb::io::async::cancelled_error();
     if (!detail::probes().departs(probe, ctx.id()))
-        throw co_await detail::gone(ctx, detail::no_live_probe);
-    const auto             wait  = window > qb::duration::zero() ? window : qb::duration::zero();
-    const auto             token = ++detail::expectation_tokens;
-    detail::WithdrawOnExit withdraw{ctx, probe, token};
+        throw co_await detail::gone(own, ctx, detail::no_live_probe);
+    const auto                wait  = window > qb::duration::zero() ? window : qb::duration::zero();
+    const auto                token = ++detail::expectation_tokens;
+    detail::WithdrawOnExit    withdraw{ctx, own, probe, token};
+    detail::expectation_scope scope{*asker, probe, ctx, own};
     // No deadline of the asker's: its timeout was read as "an event arrived" (see `expect`).
     std::optional<detail::Expectation> met;
     char const                        *ended = nullptr;
     try {
-        met.emplace(co_await qb::ask(detail::asker_scope::watching(*asker, probe), probe,
-                                     detail::Expectation{qb::type_id<E>(), wait, true, token, true}, qb::duration::zero()));
+        met.emplace(
+            co_await qb::ask(scope.asking(), probe, detail::Expectation{qb::type_id<E>(), wait, true, token, true}, qb::duration::zero()));
     } catch (qb::io::async::cancelled_error const &) {
-        withdraw.armed = false;
+        if (own.is_cancelled()) {
+            withdraw.armed = false;
+            throw;
+        }
         if (ctx.cancelled())
             throw;
-        ended = detail::asker_scope::ended(*asker, probe);
+        withdraw.armed = false;
+        ended          = scope.ended();
     }
     if (ended != nullptr)
-        throw co_await detail::gone(ctx, ended);
+        throw co_await detail::gone(own, ctx, ended);
     auto const &answer = *met;
     withdraw.armed     = false;
     if (answer.gone)

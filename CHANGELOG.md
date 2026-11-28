@@ -939,6 +939,27 @@ policy.
 
 ### Fixed
 
+- **A `qb::test` expectation ends with the scope it is asked in, and an asker that is killed is told so (Huly
+  QB-57).** `expect` and `expect_none` asked the probe in a scope of the asker's own -- its actor's, and its watch
+  of the probe -- whatever context they were given. A part of an asker's work that had a scope of its own
+  (`ScopedCoroContext{this, context().child_token()}`, the use `child_token()` is documented for) and cancelled it
+  did not end its expectations: a window of an hour ran its hour, where a `sleep` in the same scope ended at once.
+  And the context was taken for proof that the asker lived: an asker killed while it expected in a scope that was
+  not its actor's read, in the actor that was gone, the watch it kept of its probe (ASan: use-after-poison), and was
+  told two passes later that its probe had ended "without a word" -- the probe was alive. An expectation is now
+  asked in a child of the scope of its context, cancelled too by the asker's own scope and by its watch of the probe
+  (`detail::expectation_scope`): the caller's scope ends it with `cancelled_error`, and its waiter is withdrawn from
+  the probe; the asker's kill ends it whatever scope it was asked in, and is told as such. After it resumes, the
+  expectation knows that its asker lives by a copy of the asker's own token, and reads the watch through a state the
+  asker shares with it (`detail::watch_state`): nothing reads the actor, which may be gone. Proven by
+  `TestKit.AnExpectationEndsWithTheScopeItIsAskedIn` -- the asker cancels its scope once the expectation is sent;
+  the expectation ends `cancelled_error`, and the fill sent next goes to the next expectation, not to the waiter left
+  behind -- and `AnAskerKilledWhileItExpectsInAScopeNotItsActorsIsToldItWasCancelled`, both red on the kit as it
+  was (the window held; the asker was told its probe was gone), green under ASan and UBSan, and by six mutants: a
+  caller's scope that ends nothing, an asker's kill that ends nothing in a scope not its own, a watch that ends
+  nothing, a scope not its own taken for the asker alive, no withdrawal when the caller's scope ends it, and the
+  caller's scope read as the watch. Found by the review of the six entries below (round 10).
+
 - **No expectation outlives its probe, and an actor that cannot hear an answer is refused where it expects:
   `qb::test::Asker` (Huly QB-57).** An expectation sets no deadline, so whatever can leave one waiting for ever has
   to be closed where it starts. Three ways were left. A probe ended by `kill()` called on it through a handle runs

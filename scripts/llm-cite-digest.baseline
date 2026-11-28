@@ -44,13 +44,13 @@ llm/qb.llm.api.md	DeathWatch.h:36-53	d88ed992e2b3	/*!
 llm/qb.llm.api.md	DeathWatch.h:79-96	4301514665c6	/*!
 llm/qb.llm.api.md	Event.h:940-941	e76bd16e4192	template <typename... _Args>
 llm/qb.llm.api.md	Event.h:949-950	46b3869d9c8b	template <typename... _Args>
-llm/qb.llm.api.md	TestKit.h:1133-1175	b2899ad1a048	template <typename E>
-llm/qb.llm.api.md	TestKit.h:1193-1228	e53bd59f4b05	template <typename E>
-llm/qb.llm.api.md	TestKit.h:1253-1364	ea7f320cb3ef	class TestKit {
-llm/qb.llm.api.md	TestKit.h:441-506	726b97c7286a	class Asker : public qb::Actor {
-llm/qb.llm.api.md	TestKit.h:626-660	ca981c92a86c	struct RunResult {
-llm/qb.llm.api.md	TestKit.h:674-678	414ee3f8cbca	class probe_gone_error : public std::runtime_error {
-llm/qb.llm.api.md	TestKit.h:800-1095	5e02851e6d88	template <typename... Events>
+llm/qb.llm.api.md	TestKit.h:1196-1247	3a8f44be22a6	template <typename E>
+llm/qb.llm.api.md	TestKit.h:1266-1309	33a7b64099b2	template <typename E>
+llm/qb.llm.api.md	TestKit.h:1334-1445	ea7f320cb3ef	class TestKit {
+llm/qb.llm.api.md	TestKit.h:454-510	9be7f6a152f2	class Asker : public qb::Actor {
+llm/qb.llm.api.md	TestKit.h:685-719	ca981c92a86c	struct RunResult {
+llm/qb.llm.api.md	TestKit.h:733-737	414ee3f8cbca	class probe_gone_error : public std::runtime_error {
+llm/qb.llm.api.md	TestKit.h:860-1155	5e02851e6d88	template <typename... Events>
 llm/qb.llm.api.md	VirtualCore.cpp:1078-1080	7796660a5f5b	if (killed) [[unlikely]] {
 llm/qb.llm.api.md	VirtualCore.cpp:1405-1420	c58223a2a288	const bool        service = id.slot() > ActorId::ServiceBand;
 llm/qb.llm.api.md	VirtualCore.cpp:1734-1736	ebc51736721c	VirtualCore::__dead_letter__(Event const &event, DeadLetterReason con...
