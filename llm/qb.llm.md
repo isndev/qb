@@ -642,7 +642,9 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   sent to the driver is not recorded); `expect` yields `std::optional<E>`, `expect_none` a bool, both bounded by a
   deadline on the PROBE's clock, the only one: the asker times nothing, so a stalled host delays the probe's answer
   and never stands in for it; a probe that is gone -- killed, ended, or never one -- throws
-  `qb::test::probe_gone_error`, never an answer. In the scenario use `EXPECT_*`, never `ASSERT_*` (it `return`s; a
+  `qb::test::probe_gone_error`, never an answer. An actor of the test that expects itself derives from
+  `qb::test::Asker` (the driver is one): `expect` from any other actor throws `std::logic_error`, and an `Asker`
+  watches the probes it expects on, so no expectation outlives its probe. In the scenario use `EXPECT_*`, never `ASSERT_*` (it `return`s; a
   coroutine cannot). A scenario that `qb::ask`s another actor names the exchange: `kit.run<Quote>(...)`, else the
   reply is a dead letter and the ask times out. One run per kit; `Main::stop()` is process-wide, so one kit at a
   time (Huly QB-57).

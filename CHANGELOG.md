@@ -939,6 +939,32 @@ policy.
 
 ### Fixed
 
+- **No expectation outlives its probe, and an actor that cannot hear an answer is refused where it expects:
+  `qb::test::Asker` (Huly QB-57).** An expectation sets no deadline, so whatever can leave one waiting for ever has
+  to be closed where it starts. Three ways were left. A probe ended by `kill()` called on it through a handle runs
+  none of its handlers and tells nobody, and the kit's driver acted on its watch of a probe only when a core had
+  stopped: the scenario waited for the watchdog. An asker that was not the kit's driver watched nothing: on a probe
+  whose core stopped on an error, or one stopped with an engine whose signal that asker ignored, it waited for as
+  long as it lived. And an actor that never registered the kit's exchange never heard an answer at all -- a dead
+  letter on its core -- where the asker's own clock once came back empty after the window. `qb::test::Asker` (new)
+  is the actor that expects: it registers and routes the exchange, and it watches every probe it expects on. A watch
+  is answered whatever ended the probe, behind all that its core had sent, and the expectations of that asker on
+  that probe then throw `probe_gone_error` -- told two passes later, so an asker that stops with its probe is still
+  told nothing (the entry below). The kit's driver is an `Asker`; an actor of a test that expects itself derives
+  from it instead of `qb::Actor`, and `expect` / `expect_none` from any other actor throw `std::logic_error` where
+  they are called, nothing sent. For a test written against the kit as it was: an asker that registered
+  `qb::test::detail::Expectation` by hand derives from `Asker` and drops the registration and its handler, and one
+  that registers `qb::DownEvent` for itself hands the ones it does not expect to `Asker::on`. Proven by five cases.
+  A probe ended through a handle under a window and an expectation of the scenario: both waited for the watchdog.
+  An asker that is not the driver, on a probe whose core stops:
+  `AnExpectationOfAnotherActorOnAProbeWhoseCoreStopsGetsNoVerdict` pinned that it waited, it is told now, and the
+  case is `AnAskerThatIsNotTheDriverIsToldWhenItsProbesCoreStops`. An asker that outlives the stop of its engine.
+  An actor that is no `Asker`, refused by both calls. And an `onInit()` that expects on a probe of its own core,
+  added after it. Six mutants are caught: an expectation that only a core's stop ends, a watch that only the
+  driver holds, each of the two ends read as the other, a stranger left to expect, and an asker known by its id
+  alone; the forty-three of the asker's fix and the ten of the two beside it are caught again on this header,
+  fourteen of them re-pointed at the code that moved into `Asker`.
+
 - **An asker that the stop of its engine has not reached is no longer told that its probe is gone (Huly QB-57).** An
   engine stops one core at a time. A probe's core could have read the stop and reaped the probe while an asker on
   another core, in a pass that began before, had not: an expectation asked then found no probe in the census and

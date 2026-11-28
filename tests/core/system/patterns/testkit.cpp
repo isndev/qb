@@ -25,11 +25,14 @@
  * loans in arrival order -- with a probe of `qb::DownEvent` still recording the ones it is sent; and the probe's clock
  * as the only one -- a host that stalls past a window or a timeout changes no answer -- with a probe that is gone
  * never read as an answer: killed, it tells the expectations waiting and the ones on their way; ended, or never a
- * probe, it is refused before anything is sent; stopped with its engine, it says nothing; stopped with its core on an
- * error, the kit's driver hears it and its scenario's expectations throw, another actor's wait. One probe holds an
- * id: a second, of another kit or engine alive at once, is refused loudly. A case orders its steps by events -- a
- * death heard, an expectation sent, a turn of a core -- not by a sleep; where a clock is the subject (a window that a
- * hold must outlast, a stall) the wait is longer than what it must cover, never a bound from above.
+ * probe, it is refused before anything is sent; stopped with its engine, it says nothing, and an asker the stop has
+ * not reached yet is told nothing either; ended any other way -- its core stopped on an error, `kill()` called on it --
+ * its asker's watch of it is answered and the expectations throw, the driver's and any other `Asker`'s, one that
+ * outlives the engine's stop included. An actor that is no `Asker` is refused where it expects. One probe holds an
+ * id: a second, of another kit or engine alive at once, is refused loudly, and a kit holds its ids until its run
+ * ends, started or refused; a probe of `qb::SignalEvent` is no type. A case orders its steps by events -- a death
+ * heard, an expectation sent, a turn of a core -- not by a sleep; where a clock is the subject (a window that a hold
+ * must outlast, a stall) the wait is longer than what it must cover, never a bound from above.
  */
 
 #include <gtest/gtest.h>
@@ -41,6 +44,7 @@
 #include <memory>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <thread>
 #include <utility>
 
@@ -132,7 +136,7 @@ tell_now(qb::ScopedCoroContext ctx, qb::ActorId told, int what) {
 
 /// An asker killed while two expectations of it wait on the probe: a killed asker withdraws nothing. It tells `told`
 /// (1) once both are sent.
-class Abandoner : public qb::Actor {
+class Abandoner : public qb::test::Asker {
     qb::ActorId _probe;
     qb::ActorId _told;
 
@@ -142,16 +146,11 @@ public:
         , _told(told) {}
     qb::io::async::task<bool>
     onInit() override {
-        registerEvent<qb::test::detail::Expectation>(*this);
         spawn([probe = _probe, told = _told](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
             (void) co_await qb::io::async::when_all(qb::test::expect<Filled>(ctx, probe, 30s), qb::test::expect<Filled>(ctx, probe, 30s),
                                                     tell_now(ctx, told, 1));
         });
         co_return true;
-    }
-    void
-    on(qb::test::detail::Expectation &e) {
-        (void) resolve_ask(e);
     }
 };
 
@@ -252,7 +251,7 @@ at_once() {
 }
 
 /// An asker that expects one fill through the kit -- so acknowledges it -- and tells `taken` its quantity.
-class Taker : public qb::Actor {
+class Taker : public qb::test::Asker {
     qb::ActorId _probe;
     qb::ActorId _taken;
 
@@ -262,16 +261,11 @@ public:
         , _taken(taken) {}
     qb::io::async::task<bool>
     onInit() override {
-        registerEvent<qb::test::detail::Expectation>(*this);
         spawn([probe = _probe, taken = _taken](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
             const auto filled = co_await qb::test::expect<Filled>(ctx, probe, 30s);
             ctx.push_to<Cancelled>(taken, filled ? filled->qty : -1);
         });
         co_return true;
-    }
-    void
-    on(qb::test::detail::Expectation &e) {
-        (void) resolve_ask(e);
     }
 };
 
@@ -577,16 +571,25 @@ kill_once_it_waits(qb::ScopedCoroContext ctx, qb::ActorId asker, qb::ActorId tol
     co_return (co_await qb::test::expect<Cancelled>(ctx, deaths, 10s)).has_value();
 }
 
-/// What an expectation said: the probe's answer, or that the probe was gone.
-enum class verdict { none = -1, quiet, arrival, gone };
+/// What an expectation said: the probe's answer, or that the probe was gone -- `killed` when the probe said so itself,
+/// as a `qb::KillEvent` ended it; `gone` when the kit found it so: no probe at the id, or the asker's watch of it
+/// answered. Both throw the same error, and a case that is about WHO tells an expectation has to read which.
+enum class verdict { none = -1, quiet, arrival, gone, killed };
+
+[[nodiscard]] inline verdict
+gone_how(qb::test::probe_gone_error const &e) {
+    return std::string_view(e.what()).find("the probe was killed while this expectation waited on it") != std::string_view::npos
+               ? verdict::killed
+               : verdict::gone;
+}
 
 template <typename E>
 qb::io::async::task<verdict>
 quiet_verdict_of(qb::ScopedCoroContext ctx, qb::ActorId probe, qb::duration window) {
     try {
         co_return (co_await qb::test::expect_none<E>(ctx, probe, window)) ? verdict::quiet : verdict::arrival;
-    } catch (qb::test::probe_gone_error const &) {
-        co_return verdict::gone;
+    } catch (qb::test::probe_gone_error const &e) {
+        co_return gone_how(e);
     }
 }
 
@@ -599,8 +602,8 @@ qb::io::async::task<verdict>
 fill_verdict(qb::ScopedCoroContext ctx, qb::ActorId probe, qb::duration timeout) {
     try {
         co_return (co_await qb::test::expect<Filled>(ctx, probe, timeout)) ? verdict::arrival : verdict::quiet;
-    } catch (qb::test::probe_gone_error const &) {
-        co_return verdict::gone;
+    } catch (qb::test::probe_gone_error const &e) {
+        co_return gone_how(e);
     }
 }
 
@@ -613,7 +616,7 @@ kill_now(qb::ScopedCoroContext ctx, qb::ActorId target) {
 
 /// An asker whose coroutine outlives its kill long enough to expect once more: it tells `ready` it waits, catches the
 /// cancellation, and expects again on a scope that is cancelled -- nothing departs from an actor that is being killed.
-class Persister : public qb::Actor {
+class Persister : public qb::test::Asker {
     qb::ActorId _probe;
     qb::ActorId _ready;
 
@@ -623,7 +626,6 @@ public:
         , _ready(ready) {}
     qb::io::async::task<bool>
     onInit() override {
-        registerEvent<qb::test::detail::Expectation>(*this);
         spawn([probe = _probe, ready = _ready](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
             ctx.push_to<Cancelled>(ready, 1);
             try {
@@ -636,10 +638,6 @@ public:
             }
         });
         co_return true;
-    }
-    void
-    on(qb::test::detail::Expectation &e) {
-        (void) resolve_ask(e);
     }
 };
 
@@ -687,7 +685,7 @@ gone_because(qb::ScopedCoroContext ctx, qb::ActorId probe) {
 
 /// An asker that is not the kit's driver, killed while its expectation waits: it records what the expectation threw
 /// (1: `cancelled_error`, 2: `probe_gone_error`, 3: anything else).
-class KilledWhileItWaits : public qb::Actor {
+class KilledWhileItWaits : public qb::test::Asker {
     qb::ActorId                       _probe;
     qb::ActorId                       _told;
     std::shared_ptr<std::atomic<int>> _threw;
@@ -699,7 +697,6 @@ public:
         , _threw(std::move(threw)) {}
     qb::io::async::task<bool>
     onInit() override {
-        registerEvent<qb::test::detail::Expectation>(*this);
         spawn([probe = _probe, told = _told, threw = _threw](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
             try {
                 (void) co_await qb::io::async::when_all(qb::test::expect<Filled>(ctx, probe, std::chrono::hours(1)), tell_now(ctx, told, 1));
@@ -712,10 +709,6 @@ public:
             }
         });
         co_return true;
-    }
-    void
-    on(qb::test::detail::Expectation &e) {
-        (void) resolve_ask(e);
     }
 };
 
@@ -742,7 +735,8 @@ public:
     }
 };
 
-/// Asks the census, from ITS core, whether a kit's driver lives at the id it is given, and tells `told` (1: yes).
+/// Asks the census, from ITS core, whether a kit's driver lives at the id it is given, and an asker, and tells `told`
+/// (1: a driver; 2: an asker; 3: both; 0: neither).
 struct Peek : qb::Event {
     qb::ActorId who;
 
@@ -763,7 +757,8 @@ public:
     }
     void
     on(Peek const &p) {
-        push<Cancelled>(_told, qb::test::detail::probes().driver(p.who) != nullptr ? 1 : 0);
+        push<Cancelled>(_told, (qb::test::detail::probes().driver(p.who) != nullptr ? 1 : 0)
+                                   + (qb::test::detail::probes().asker(p.who) != nullptr ? 2 : 0));
     }
 };
 
@@ -794,7 +789,7 @@ stop_and_stall(qb::ScopedCoroContext ctx, qb::ActorId stopper, qb::ActorId stall
 
 /// An asker that is NOT the kit's driver: it waits for a quiet window on `probe`, tells `sent` -- a probe beside
 /// `probe` -- once its expectation has left, and `heard` the verdict if one ever comes.
-class Outsider : public qb::Actor {
+class Outsider : public qb::test::Asker {
     qb::ActorId _probe;
     qb::ActorId _sent;
     qb::ActorId _heard;
@@ -806,17 +801,12 @@ public:
         , _heard(heard) {}
     qb::io::async::task<bool>
     onInit() override {
-        registerEvent<qb::test::detail::Expectation>(*this);
         spawn([probe = _probe, sent = _sent, heard = _heard](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
             auto [said, told] = co_await qb::io::async::when_all(quiet_verdict(ctx, probe, std::chrono::hours(1)), tell_now(ctx, sent, 1));
             (void) told;
             ctx.push_to<Cancelled>(heard, static_cast<int>(said));
         });
         co_return true;
-    }
-    void
-    on(qb::test::detail::Expectation &e) {
-        (void) resolve_ask(e);
     }
 };
 
@@ -859,7 +849,7 @@ public:
 /// An asker that is not the kit's driver, expecting on a probe that the stop of its engine has already taken. It holds
 /// its core -- a stop raised meanwhile is not read there -- until the probe's core has reaped the probe, then expects
 /// again: the probe is gone, and nothing has told this actor that it is going too.
-class HeldThroughTheStop : public qb::Actor {
+class HeldThroughTheStop : public qb::test::Asker {
     qb::ActorId                _probe;
     std::shared_ptr<StopFlags> _flags;
 
@@ -869,7 +859,6 @@ public:
         , _flags(std::move(flags)) {}
     qb::io::async::task<bool>
     onInit() override {
-        registerEvent<qb::test::detail::Expectation>(*this);
         spawn([probe = _probe, flags = _flags](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
             (void) co_await qb::test::expect<Filled>(ctx, probe, 0s); // a live probe answers
             flags->holding.store(true);
@@ -880,10 +869,6 @@ public:
             (void) co_await qb::test::expect<Filled>(ctx, probe, 0s);
         });
         co_return true;
-    }
-    void
-    on(qb::test::detail::Expectation &e) {
-        (void) resolve_ask(e);
     }
 };
 
@@ -919,7 +904,7 @@ public:
 
 /// An asker whose `onInit()` -- it runs while the other cores still build their actors -- expects a quiet window on
 /// `probe`, and tells `told` the verdict.
-class Early : public qb::Actor {
+class Early : public qb::test::Asker {
     qb::ActorId  _probe;
     qb::ActorId  _told;
     qb::duration _window;
@@ -931,16 +916,145 @@ public:
         , _window(window) {}
     qb::io::async::task<bool>
     onInit() override {
-        registerEvent<qb::test::detail::Expectation>(*this);
         auto       ctx   = context();
         const auto told  = _told;
         const auto heard = co_await quiet_verdict(ctx, _probe, _window);
         ctx.push_to<Cancelled>(told, static_cast<int>(heard));
         co_return true;
     }
+};
+
+/// An `Early` on the core of its own probe, added BEFORE it: where the probe will be is told through `where`, filled
+/// once the kit has added both.
+struct Whereabouts {
+    qb::ActorId probe;
+    qb::ActorId told;
+};
+
+class EarlyBesideItsProbe : public qb::test::Asker {
+    std::shared_ptr<Whereabouts> _where;
+
+public:
+    explicit EarlyBesideItsProbe(std::shared_ptr<Whereabouts> where)
+        : _where(std::move(where)) {}
+    qb::io::async::task<bool>
+    onInit() override {
+        auto       ctx   = context();
+        const auto told  = _where->told;
+        const auto heard = co_await quiet_verdict(ctx, _where->probe, 50ms);
+        ctx.push_to<Cancelled>(told, static_cast<int>(heard));
+        co_return true;
+    }
+};
+
+/// An actor that is no `qb::test::Asker` and expects all the same: nothing routes a probe's answer to it. It tells
+/// `told` what `expect` did (1: refused with `std::logic_error`; 2: anything else).
+class Stranger : public qb::Actor {
+    qb::ActorId _probe;
+    qb::ActorId _told;
+
+public:
+    Stranger(qb::ActorId probe, qb::ActorId told)
+        : _probe(probe)
+        , _told(told) {}
+    qb::io::async::task<bool>
+    onInit() override {
+        spawn([probe = _probe, told = _told](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
+            int what = 2;
+            try {
+                (void) co_await qb::test::expect<Filled>(ctx, probe, 0s);
+            } catch (std::logic_error const &) {
+                what = 1;
+            }
+            int none = 2;
+            try {
+                (void) co_await qb::test::expect_none<Filled>(ctx, probe, 0s);
+            } catch (std::logic_error const &) {
+                none = 1;
+            }
+            ctx.push_to<Cancelled>(told, what);
+            ctx.push_to<Cancelled>(told, none);
+        });
+        co_return true;
+    }
+};
+
+/// The id of a probe its owner built.
+struct Made : qb::Event {
+    qb::ActorId who;
+
+    explicit Made(qb::ActorId w)
+        : who(w) {}
+};
+
+struct KillIt : qb::Event {};
+
+/// Owns a probe of `Filled` -- a referenced child, built in its `onInit()` -- tells `report`, a probe of `Made`, its id,
+/// and on a `KillIt` ends it by calling `kill()` on it: no event reaches the probe, and no handler of its runs.
+class Owner : public qb::Actor {
+    qb::ActorId                                  _report;
+    qb::ActorHandle<qb::test::TestProbe<Filled>> _probe;
+
+public:
+    explicit Owner(qb::ActorId report)
+        : _report(report) {}
+    qb::io::async::task<bool>
+    onInit() override {
+        registerEvent<KillIt>(*this);
+        _probe = addRefActor<qb::test::TestProbe<Filled>>();
+        push<Made>(_report, _probe.id());
+        co_return true;
+    }
     void
-    on(qb::test::detail::Expectation &e) {
-        (void) resolve_ask(e);
+    on(KillIt const &) {
+        if (_probe.ready())
+            _probe->kill();
+    }
+};
+
+/// Has `owner` end its probe once the branches started before it have sent their expectations.
+qb::io::async::task<void>
+kill_it_now(qb::ScopedCoroContext ctx, qb::ActorId owner) {
+    ctx.push_to<KillIt>(owner);
+    co_return;
+}
+
+struct Leave : qb::Event {};
+
+/// An asker that outlives the stop of its engine: it ignores the signal, waits for a window of an hour on `probe`,
+/// tells `sent` once that expectation has left, records the verdict in `heard`, and leaves on it. (And leaves after
+/// thirty seconds whatever happened: a kit that left it waiting would otherwise hold the engine's join for ever.)
+class Survivor : public qb::test::Asker {
+    qb::ActorId                       _probe;
+    qb::ActorId                       _sent;
+    std::shared_ptr<std::atomic<int>> _heard;
+
+public:
+    Survivor(qb::ActorId probe, qb::ActorId sent, std::shared_ptr<std::atomic<int>> heard)
+        : _probe(probe)
+        , _sent(sent)
+        , _heard(std::move(heard)) {}
+    qb::io::async::task<bool>
+    onInit() override {
+        registerEvent<qb::SignalEvent>(*this);
+        registerEvent<Leave>(*this);
+        spawn([probe = _probe, sent = _sent, heard = _heard](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
+            auto [said, told] = co_await qb::io::async::when_all(quiet_verdict(ctx, probe, std::chrono::hours(1)), tell_now(ctx, sent, 1));
+            (void) told;
+            heard->store(static_cast<int>(said));
+            ctx.push<Leave>();
+        });
+        spawn([](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
+            co_await ctx.sleep(30s);
+            ctx.push<Leave>();
+        });
+        co_return true;
+    }
+    void
+    on(qb::SignalEvent const &) {} // it stays
+    void
+    on(Leave const &) {
+        kill();
     }
 };
 
@@ -968,8 +1082,8 @@ expectations_on_their_way_to_a_killed_probe_are_answered(qb::CoreId probe_core) 
             ctx.push_to<qb::KillEvent>(probe);
             ctx.push_to<qb::KillEvent>(probe); // killed again while it waits for the two below: nothing more to do
             auto [none, fill] = co_await qb::io::async::when_all(quiet_verdict(ctx, probe, 30s), fill_verdict(ctx, probe, 30s));
-            EXPECT_EQ(none, verdict::gone) << "sent to a live probe, received by one already killed: left without an answer";
-            EXPECT_EQ(fill, verdict::gone);
+            EXPECT_EQ(none, verdict::killed) << "sent to a live probe, received by one already killed: 2, it was left to the asker's watch";
+            EXPECT_EQ(fill, verdict::killed);
             EXPECT_TRUE((co_await qb::test::expect<Cancelled>(ctx, deaths, 10s)).has_value()) << "the last one answered, the probe dies";
         },
         30s);
@@ -1654,9 +1768,9 @@ TEST(TestKit, AProbeKilledWhileExpectationsWaitOnItAnswersEachThatItIsGone) {
                     co_await qb::io::async::when_all(quiet_verdict(ctx, probe, 30s), fill_verdict(ctx, probe, 30s),
                                                      quiet_verdict_of<Cancelled>(ctx, probe, 30s), kill_now(ctx, probe));
                 (void) killed;
-                EXPECT_EQ(none, verdict::gone) << "a window on a probe that is gone neither held nor broke";
-                EXPECT_EQ(fill, verdict::gone) << "nor did a fill arrive or fail to";
-                EXPECT_EQ(other, verdict::gone) << "the waiters of the probe's other type are told too";
+                EXPECT_EQ(none, verdict::killed) << "a window on a probe that is gone neither held nor broke: the probe says so";
+                EXPECT_EQ(fill, verdict::killed) << "nor did a fill arrive or fail to";
+                EXPECT_EQ(other, verdict::killed) << "the waiters of the probe's other type are told too";
             },
             30s);
         EXPECT_TRUE(run) << "probe on core " << probe_core << ": " << run.describe();
@@ -1701,7 +1815,7 @@ TEST(TestKit, AKilledProbeTellsTheExpectationsWaitingWithoutWaitingForTheOnesOnT
             EXPECT_TRUE(qb::test::detail::probes().departs(probe, ctx.id())) << "one on its way, and nothing sends it";
             auto [none, killed] = co_await qb::io::async::when_all(quiet_verdict(ctx, probe, 30s), kill_now(ctx, probe));
             (void) killed;
-            EXPECT_EQ(none, verdict::gone);
+            EXPECT_EQ(none, verdict::killed) << "2: told by its asker's watch, once the probe had died -- not by the probe, as it was killed";
             EXPECT_FALSE(qb::test::detail::probes().departs(probe, ctx.id())) << "killed, it takes no expectation more, however long it stays";
         },
         30s);
@@ -1840,6 +1954,25 @@ TEST(TestKit, AnExpectationSentBeforeItsProbeIsBuiltIsAnswered) {
     EXPECT_TRUE(run) << run.describe();
 }
 
+TEST(TestKit, AnExpectationAskedInAnOnInitOnAProbeOfItsOwnCoreIsAnswered) {
+    // The same on ONE core, the asker added ahead of its probe. A core builds every actor it was given before it runs
+    // the first `onInit()`: the probe exists when the asker expects on it, and the asker's watch of it -- an asker
+    // watches the probes it expects on -- is taken, not answered "unknown".
+    const PatientActivation patient;
+    const auto              where = std::make_shared<Whereabouts>();
+    qb::test::TestKit       kit;
+    (void) kit.add<EarlyBesideItsProbe>(0, where);
+    where->probe   = kit.probe<Filled>(0);
+    where->told    = kit.probe<Cancelled>(0);
+    const auto run = kit.run(
+        [told = where->told](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
+            EXPECT_EQ(co_await next_told(ctx, told), static_cast<int>(verdict::quiet))
+                << "2: a probe of the asker's own core was taken for gone";
+        },
+        30s);
+    EXPECT_TRUE(run) << run.describe();
+}
+
 TEST(TestKit, AnExpectationAskedInAnOnInitEndsAtItsCoresActivationDeadline) {
     // The bound of the case above, and it is the core's, not the kit's: an asker sets no deadline, but a core fails an
     // actor whose `onInit()` has not returned when its activation deadline passes -- five seconds by default, 200 ms
@@ -1970,16 +2103,17 @@ TEST(TestKit, AProbeBuiltAtAnIdAKitAnnouncedIsNotTakenForIt) {
 }
 
 TEST(TestKit, ADriverIsItsThreadsAloneAndASecondAtItsIdIsALogicError) {
-    // The census knows a kit's driver by its id AND its thread: an actor of another engine may hold the same id, on
-    // another thread, and was taken for the driver -- made to watch its probe, asked in a scope that was not its own.
-    // Asked from another core, the census knows no driver at that id.
+    // The census knows an asker -- a kit's driver among them -- by its id AND its thread: an actor of another engine
+    // may hold the same id, on another thread, and was taken for the driver -- made to watch its probe, asked in a
+    // scope that was not its own. Asked from another core, the census knows no driver at that id, and no asker.
     qb::test::TestKit kit;
     const auto        told   = kit.probe<Cancelled>(0);
     const auto        peeker = kit.add<Peeker>(1, told);
     const auto        run    = kit.run([told, peeker](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
         EXPECT_NE(qb::test::detail::probes().driver(ctx.id()), nullptr) << "the scenario's own actor is its kit's driver";
+        EXPECT_EQ(qb::test::detail::probes().asker(ctx.id()), qb::test::detail::probes().driver(ctx.id())) << "and an asker: that one";
         ctx.push_to<Peek>(peeker, ctx.id());
-        EXPECT_EQ(co_await next_told(ctx, told), 0) << "another thread was given the driver that lives at this id";
+        EXPECT_EQ(co_await next_told(ctx, told), 0) << "another thread was given the driver (1), the asker (2), that lives at this id";
         EXPECT_THROW(qb::test::detail::probes().drives(ctx.id(), nullptr), std::logic_error) << "two drivers at one id: two kits run at once";
     });
     EXPECT_TRUE(run) << run.describe();
@@ -2049,30 +2183,86 @@ TEST(TestKit, AProbeWhoseCoreStopsOnAnErrorTellsTheScenarioThatExpectsOnIt) {
     EXPECT_FALSE(run);
 }
 
-TEST(TestKit, AnExpectationOfAnotherActorOnAProbeWhoseCoreStopsGetsNoVerdict) {
-    // The same end, seen by an asker that is not the kit's driver: nobody watches for it, and it registers no
-    // `qb::DownEvent` -- the kit asks that of no actor. Its expectation gets no verdict, never a false one, and waits.
+TEST(TestKit, AnAskerThatIsNotTheDriverIsToldWhenItsProbesCoreStops) {
+    // The same end, seen by an asker that is not the kit's driver. Nobody watched for it: its expectation got no
+    // verdict, and waited for as long as the actor lived. Every `Asker` watches the probes it expects on, the driver
+    // being one among them.
     qb::test::TestKit kit;
     const auto        probe   = kit.probe<Filled>(1);
     const auto        sent    = kit.probe<Cancelled>(1);
     const auto        thrower = kit.add<Thrower>(1);
     const auto        heard   = kit.probe<Cancelled>(0);
-    const auto        deaths  = kit.probe<Cancelled>(0);
-    const auto        mourner = kit.add<Mourner>(0, deaths);
     (void) kit.add<Outsider>(2, probe, sent, heard);
     const auto run = kit.run(
-        [sent, thrower, heard, deaths, mourner](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
+        [sent, thrower, heard](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
             EXPECT_EQ(co_await next_told(ctx, sent), 1) << "the outsider's expectation waits on the probe";
-            ctx.push_to<Mourn>(mourner, thrower);
             ctx.push_to<Boom>(thrower);
-            EXPECT_TRUE((co_await qb::test::expect<Cancelled>(ctx, deaths, 10s)).has_value())
-                << "the probe's core stopped: its watcher said so";
-            EXPECT_TRUE(co_await qb::test::expect_none<Cancelled>(ctx, heard, 200ms))
-                << "it was given a verdict by a probe that could send none";
+            EXPECT_EQ(co_await next_told(ctx, heard), static_cast<int>(verdict::gone))
+                << "-1: its window on a probe whose core stopped got no verdict; 0 or 1: a verdict the probe never gave";
         },
         30s);
     EXPECT_TRUE(run.completed) << run.describe();
     EXPECT_TRUE(run.engine_error) << "a core stopped on an exception";
+}
+
+TEST(TestKit, AProbeEndedThroughAHandleEndsTheExpectationsOnIt) {
+    // `kill()` called on a probe through a handle runs no handler of the probe: it answers nobody, and dies. Its core
+    // lives on, so no core's stop was heard either: an expectation that waited on it, with no deadline of its own, waited
+    // until the watchdog. The asker's watch of the probe is answered whatever ended it.
+    qb::test::TestKit kit;
+    const auto        ids   = kit.probe<Made>(0);
+    const auto        owner = kit.add<Owner>(1, ids);
+    const auto        run   = kit.run(
+        [ids, owner](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
+            const auto made = co_await qb::test::expect<Made>(ctx, ids, 30s);
+            EXPECT_TRUE(made.has_value()) << "the owner built its probe";
+            if (!made)
+                co_return;
+            const auto probe         = made->who;
+            auto [none, why, killed] = co_await qb::io::async::when_all(quiet_verdict(ctx, probe, std::chrono::hours(1)),
+                                                                        gone_because(ctx, probe), kill_it_now(ctx, owner));
+            (void) killed;
+            EXPECT_EQ(none, verdict::gone) << "a window on a probe that was killed through a handle neither held nor broke";
+            EXPECT_NE(why.find("said nothing"), std::string::npos) << why;
+            EXPECT_EQ(co_await quiet_verdict(ctx, probe, 30s), verdict::gone) << "and the next expectation finds no probe";
+        },
+        30s);
+    EXPECT_TRUE(run) << run.describe();
+}
+
+TEST(TestKit, AnAskerThatOutlivesTheStopOfItsEngineIsToldItsProbeIsGone) {
+    // A probe that stops with its engine says nothing, because its askers stop with it. One that does not -- an actor
+    // that ignores the signal -- waited on a probe that no longer existed, for as long as it chose to live. Its watch
+    // of the probe is answered like any other; it is still there two passes later, and is told.
+    const auto        heard = std::make_shared<std::atomic<int>>(-2);
+    qb::test::TestKit kit;
+    const auto        probe = kit.probe<Filled>(1);
+    const auto        sent  = kit.probe<Cancelled>(1);
+    (void) kit.add<Survivor>(2, probe, sent, heard);
+    const auto run = kit.run(
+        [sent](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
+            EXPECT_EQ(co_await next_told(ctx, sent), 1) << "the survivor's expectation waits on the probe";
+        },
+        60s);
+    EXPECT_TRUE(run) << run.describe();
+    EXPECT_EQ(heard->load(), static_cast<int>(verdict::gone)) << "-2: it waited on a probe its engine's stop had ended, until it gave up";
+}
+
+TEST(TestKit, AnActorThatIsNoAskerIsRefusedWhereItExpects) {
+    // An expectation sets no deadline: its answer is all that ends it, and an actor that does not route the kit's
+    // exchange never hears one -- a dead letter on its core, and a coroutine that waits for ever, where the asker's own
+    // clock once came back empty after the window. The wait is refused where it would begin.
+    qb::test::TestKit kit;
+    const auto        probe = kit.probe<Filled>(0);
+    const auto        told  = kit.probe<Cancelled>(0);
+    (void) kit.add<Stranger>(1, probe, told);
+    const auto run = kit.run(
+        [told](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
+            EXPECT_EQ(co_await next_told(ctx, told), 1) << "expect: -1, it waits on an answer it cannot hear; 2: it was not refused";
+            EXPECT_EQ(co_await next_told(ctx, told), 1) << "expect_none";
+        },
+        30s);
+    EXPECT_TRUE(run) << run.describe();
 }
 
 TEST(TestKit, ADownEventSentToTheDriverEndsNoExpectation) {
@@ -2127,8 +2317,8 @@ TEST(TestKit, AScenarioWhoseEngineIsStoppedByAnotherActorIsNotToldItsProbesAreGo
     // An engine that another actor stops takes the probes and the scenario together. The driver's watch of its probes
     // is answered then too -- "killed" -- and its core, held meanwhile, reads that answer before it reads the stop:
     // acted on, it ended the scenario's expectation with an error, and the run reported it or not by which of the two
-    // its core read first. Only a core that stops on an error ends an expectation that waits. (One the scenario sends
-    // AFTER the stop finds the probe gone, and throws, as after any end of a probe.)
+    // its core read first. The watch does end the expectation -- whatever ended the probe -- but the scenario is told
+    // two passes of its core later, and only if it is still there: the stop has reached it by then.
     qb::test::TestKit kit;
     const auto        probe   = kit.probe<Filled>(1);
     const auto        stopper = kit.add<Stopper>(1);

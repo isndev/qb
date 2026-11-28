@@ -20,6 +20,9 @@
  *   probe, window)` is true when no `E` arrived during the window. Both are a `qb::ask` of the probe,
  *   so the probe may live on any core -- and the probe's clock is the only one: the asker sets no
  *   deadline of its own, and takes the probe's answer however late a stalled host delivers it.
+ * - `Asker` is the actor that expects: the kit's driver is one, and an actor of a test that calls
+ *   `expect` itself derives from it. It hears the probes' answers, and it watches the probes it
+ *   expects on, so that no expectation outlives its probe.
  *
  * It is not a deterministic scheduler: the engine runs for real, on its own threads, and a test
  * asserts on what arrives within a deadline, never on interleavings. It depends on no test framework:
@@ -104,12 +107,14 @@
 
 namespace qb::test {
 
+class Asker;
+
 namespace detail {
 
 /**
  * @brief The one exchange between a scenario and a probe: "the next `E`", or "no `E` during the
  *        window" (`absence`).
- * @details A single non-template type, so a driver registers it once whatever the probes record. The
+ * @details A single non-template type, so an `Asker` registers it once whatever the probes record. The
  *          probe answers with a copy of the recorded event behind a `shared_ptr` made on its own core;
  *          the mailbox that carries the reply orders the copy before its read on the asker's core.
  */
@@ -166,8 +171,6 @@ struct ExpectationWithdrawn : qb::Event {
 /// and Mach-O; on Windows qb has no export macro yet, and each DLL counts its own.
 QB_ABI_ANCHOR inline std::atomic<std::uint64_t> expectation_tokens{0};
 
-class ScenarioDriverBase;
-
 /// Who announced a probe: a `TestKit` says so to the constructor of each probe it adds (`TestKit::add`).
 struct announced_by {
     void const *kit = nullptr;
@@ -195,8 +198,9 @@ inline constexpr char const *one_probe_per_id =
  *          probe per id, and a second -- a probe of another kit, or of another engine, alive in the same process --
  *          is a `std::logic_error` where it is added or built, never a probe silently taken for the other: an
  *          announcement is its kit's alone (the probe says who adds it), a built probe's id is its own. The
- *          census also knows the kits' drivers (`drives()`): an expectation of a scenario is asked through its driver,
- *          which watches the probe (`ScenarioDriverBase::watching`).
+ *          census also knows the askers (`asks()`), the kits' drivers among them (`drives()`): an expectation is
+ *          asked through its `Asker`, which watches the probe, and one of an actor that is none is refused where it
+ *          is asked.
  */
 class probe_census {
     struct departure {
@@ -210,14 +214,15 @@ class probe_census {
         bool                   built     = false;   ///< Its constructor ran: a second probe built at this id is another engine's
         void const            *announcer = nullptr; ///< The `TestKit` that announced it, if one did
     };
-    struct scenario {
-        qb::ActorId         id;
-        ScenarioDriverBase *driver;
-        std::thread::id     thread; ///< Its core's: the only thread its coroutines run on
+    struct seat {
+        qb::ActorId     id;
+        Asker          *asker;
+        std::thread::id thread;         ///< Its core's: the only thread its coroutines run on
+        bool            drives = false; ///< It runs a kit's scenario
     };
-    std::mutex            _lock;
-    std::vector<entry>    _probes;
-    std::vector<scenario> _drivers;
+    std::mutex         _lock;
+    std::vector<entry> _probes;
+    std::vector<seat>  _askers;
 
     [[nodiscard]] entry *
     find(qb::ActorId id) noexcept {
@@ -272,29 +277,46 @@ public:
         if (entry *const e = find(id); e != nullptr && !e->built && e->announcer == kit)
             _probes.erase(_probes.begin() + (e - _probes.data()));
     }
-    /// The driver of a kit's scenario lives at `id`, on the thread that calls this.
-    /// @throws std::logic_error when a driver holds the id already: two kits run at once.
+    /// An `Asker` lives at `id`, on the thread that calls this: its constructor's.
     void
-    drives(qb::ActorId id, ScenarioDriverBase *driver) {
+    asks(qb::ActorId id, Asker *asker) {
         std::lock_guard<std::mutex> guard(_lock);
-        if (std::any_of(_drivers.begin(), _drivers.end(), [id](scenario const &d) { return d.id == id; }))
-            throw std::logic_error(one_probe_per_id);
-        _drivers.push_back(scenario{id, driver, std::this_thread::get_id()});
+        _askers.push_back(seat{id, asker, std::this_thread::get_id()});
     }
+    /// That `Asker` is destroyed.
     void
-    driven(qb::ActorId id) noexcept {
+    asked(Asker const *asker) noexcept {
         std::lock_guard<std::mutex> guard(_lock);
-        std::erase_if(_drivers, [id](scenario const &d) { return d.id == id; });
+        std::erase_if(_askers, [asker](seat const &a) { return a.asker == asker; });
     }
-    /// The driver that lives at `asker` ON THE CALLING THREAD, or null. A driver's coroutines run on its core's
-    /// thread and nowhere else: an actor of another engine that holds the same id is on another thread, and is not
-    /// taken for it.
-    [[nodiscard]] ScenarioDriverBase *
-    driver(qb::ActorId asker) noexcept {
+    /// The `Asker` that lives at `id` ON THE CALLING THREAD, or null. An asker's coroutines run on its core's thread
+    /// and nowhere else: an actor of another engine that holds the same id is on another thread, and is not taken
+    /// for it.
+    [[nodiscard]] Asker *
+    asker(qb::ActorId id) noexcept {
         std::lock_guard<std::mutex> guard(_lock);
         const auto                  here = std::this_thread::get_id();
-        const auto it = std::find_if(_drivers.begin(), _drivers.end(), [&](scenario const &d) { return d.id == asker && d.thread == here; });
-        return it == _drivers.end() ? nullptr : it->driver;
+        const auto it = std::find_if(_askers.begin(), _askers.end(), [&](seat const &a) { return a.id == id && a.thread == here; });
+        return it == _askers.end() ? nullptr : it->asker;
+    }
+    /// `driver`, the asker at `id`, runs a kit's scenario.
+    /// @throws std::logic_error when a driver holds the id already: two kits run at once.
+    void
+    drives(qb::ActorId id, Asker const *driver) {
+        std::lock_guard<std::mutex> guard(_lock);
+        if (std::any_of(_askers.begin(), _askers.end(), [id](seat const &a) { return a.id == id && a.drives; }))
+            throw std::logic_error(one_probe_per_id);
+        for (seat &a : _askers)
+            if (a.asker == driver)
+                a.drives = true;
+    }
+    /// The driver that lives at `id` ON THE CALLING THREAD, or null.
+    [[nodiscard]] Asker *
+    driver(qb::ActorId id) noexcept {
+        std::lock_guard<std::mutex> guard(_lock);
+        const auto                  here = std::this_thread::get_id();
+        const auto it = std::find_if(_askers.begin(), _askers.end(), [&](seat const &a) { return a.id == id && a.thread == here && a.drives; });
+        return it == _askers.end() ? nullptr : it->asker;
     }
     /// An expectation of `asker` leaves for `id`, counted on its way: false, and nothing counted, when no probe
     /// holds the id or the one that does was killed.
@@ -381,6 +403,122 @@ struct WithdrawOnExit {
     }
 };
 
+/// `probe_gone_error::what()` when the census refused the id, before anything was sent.
+inline constexpr char const *no_live_probe =
+    "qb::test: no probe takes expectations at this id -- it ended, it was killed, or it never was a probe";
+/// `probe_gone_error::what()` when the probe said so itself, killed.
+inline constexpr char const *probe_ended = "qb::test: the probe was killed while this expectation waited on it";
+/// `probe_gone_error::what()` when the asker heard the probe's core stop.
+inline constexpr char const *probe_core_stopped = "qb::test: the probe's core stopped on an error while this expectation waited on it";
+/// `probe_gone_error::what()` when the asker heard the probe end with no word from it.
+inline constexpr char const *probe_ended_unheard =
+    "qb::test: the probe ended while this expectation waited on it, and said nothing -- kill() called on it, or the stop of its engine";
+/// `std::logic_error::what()` of an expectation asked by an actor that is no `Asker`.
+inline constexpr char const *no_asker =
+    "qb::test: this actor is no qb::test::Asker -- only an Asker hears a probe's answer; derive the actor from it";
+
+struct asker_scope;
+
+} // namespace detail
+
+/**
+ * @brief An actor whose coroutines expect on probes: `expect` and `expect_none` are asked from an `Asker`, and from
+ *        no other actor.
+ * @details A `TestKit`'s driver is one, so a scenario needs nothing. An actor of a test that expects itself -- from its
+ *          `onInit()`, from a coroutine it spawns -- derives from `Asker` instead of `qb::Actor`. What it gets:
+ *          - the kit's exchange, registered and routed: a probe's answer reaches the expectation that waits for it.
+ *            An actor that does not route it never hears an answer, and nothing bounds an expectation but its
+ *            answer: `expect` refuses such an actor where it is called, with `std::logic_error`;
+ *          - a watch of every probe it expects on (`watch()`), sent ahead of the first expectation in the one pipe to
+ *            the probe's core. A probe can end without a word -- `kill()` called on it through a handle, a core that
+ *            stops on an exception out of a handler -- and a watch is answered whatever ended it, behind everything
+ *            its core had sent: the expectations of this actor that wait on that probe, or are on their way to it,
+ *            then throw `probe_gone_error`. No expectation of an `Asker` outlives its probe.
+ *          It registers `detail::Expectation` and `qb::DownEvent` in its constructor. A derived actor that registers
+ *          `qb::DownEvent` for itself takes the place of the handler here: it hands every one it does not expect to
+ *          `Asker::on(qb::DownEvent const &)`.
+ */
+class Asker : public qb::Actor {
+    friend struct detail::asker_scope;
+
+    /// A probe this actor expects on, and the scope its expectations on it are asked in.
+    struct watched {
+        qb::ActorId                       probe;
+        qb::io::async::cancellation_token ended;         ///< Cancelled when the watch of the probe is answered
+        char const                       *met = nullptr; ///< What the expectations it ends are told
+    };
+    std::vector<watched> _watched;
+
+    /// The context an expectation of this actor on `probe` is asked in: a child of the actor's own scope, cancelled
+    /// when the watch of the probe is answered -- the expectations waiting in it end, and `expect` reads which of the
+    /// two scopes ended. A probe that a kit announced and its core has not built yet -- an `onInit()` that runs while
+    /// another core still builds its actors -- is watched like any other: the watch waits in the pipe to that core
+    /// with the expectation, and a core builds every actor it was given before it turns its first pass. (On the
+    /// asker's own core the probe exists already: a core builds all its actors, then runs their `onInit()`.)
+    [[nodiscard]] qb::ScopedCoroContext
+    watching(qb::ActorId probe) {
+        auto it = std::find_if(_watched.begin(), _watched.end(), [probe](watched const &w) { return w.probe == probe; });
+        if (it == _watched.end()) {
+            it = _watched.insert(_watched.end(), watched{probe, context().child_token()});
+            watch(probe); // ahead of the first expectation, in the one pipe to the probe's core
+        }
+        return qb::ScopedCoroContext{this, it->ended};
+    }
+
+    /// What the expectations that the watch of `probe` ended are told.
+    [[nodiscard]] char const *
+    ended(qb::ActorId probe) const noexcept {
+        const auto it = std::find_if(_watched.begin(), _watched.end(), [probe](watched const &w) { return w.probe == probe; });
+        return it != _watched.end() && it->met != nullptr ? it->met : detail::probe_ended_unheard;
+    }
+
+protected:
+    Asker() {
+        registerEvent<detail::Expectation>(*this);
+        registerEvent<qb::DownEvent>(*this);
+        detail::probes().asks(id(), this);
+    }
+    ~Asker() override {
+        detail::probes().asked(this);
+    }
+
+public:
+    /// A probe's answer: it resumes the expectation that waits for it. Anything else is dropped.
+    void
+    on(detail::Expectation &e) {
+        (void) resolve_ask(e);
+    }
+
+    /// The answer of a watch -- the core's own, whose source is the actor it names: a `qb::DownEvent` another actor
+    /// sends this one ends nothing. Whatever ended the probe ends the scope: a probe that a `qb::KillEvent` ended has
+    /// answered every expectation ahead of this, and one that stops with its engine stops with this actor -- told
+    /// two passes later, an expectation that the stop reaches first is told nothing (`detail::gone`).
+    void
+    on(qb::DownEvent const &e) {
+        if (e.getSource() != e.watched)
+            return;
+        const auto it = std::find_if(_watched.begin(), _watched.end(), [&e](watched const &w) { return w.probe == e.watched; });
+        if (it == _watched.end())
+            return;
+        it->met = e.reason == qb::DownReason::core_stopped ? detail::probe_core_stopped : detail::probe_ended_unheard;
+        it->ended.cancel();
+    }
+};
+
+namespace detail {
+
+/// The kit's way into an `Asker`: `expect` and `expect_none` ask through it.
+struct asker_scope {
+    [[nodiscard]] static qb::ScopedCoroContext
+    watching(Asker &asker, qb::ActorId probe) {
+        return asker.watching(probe);
+    }
+    [[nodiscard]] static char const *
+    ended(Asker const &asker, qb::ActorId probe) noexcept {
+        return asker.ended(probe);
+    }
+};
+
 /// How a scenario ended, written on the driver's core and read on the test thread.
 struct ScenarioState {
     std::mutex              lock;
@@ -424,15 +562,9 @@ struct ScenarioRunnerOf final : ScenarioRunner {
 };
 
 /// What every driver does, in code that depends on no scenario type: the spawned coroutine is this class's own.
-class ScenarioDriverBase : public qb::Actor {
-    /// A probe the scenario expects on, and the scope its expectations on it are asked in.
-    struct watched {
-        qb::ActorId                       probe;
-        qb::io::async::cancellation_token stopped; ///< Cancelled when the probe's core stopped under it
-    };
+class ScenarioDriverBase : public Asker {
     std::shared_ptr<ScenarioRunner> _runner;
     std::shared_ptr<ScenarioState>  _state;
-    std::vector<watched>            _watched;
 
 protected:
     ScenarioDriverBase(std::shared_ptr<ScenarioRunner> runner, std::shared_ptr<ScenarioState> state)
@@ -443,7 +575,6 @@ protected:
         _state->built = true;
     }
     ~ScenarioDriverBase() override { // destroyed before its scenario ended: the run ends, not run to its end (Huly QB-1227)
-        probes().driven(id());
         _state->finish(false, nullptr);
     }
     void
@@ -458,45 +589,11 @@ protected:
             qb::Main::stop();
         });
     }
-
-public:
-    void
-    on(Expectation &e) {
-        (void) resolve_ask(e); // a reply to the scenario's expect; anything else is dropped
-    }
-
-    /// The context an expectation of this scenario on `probe` is asked in. A probe on a core that stops on an error --
-    /// an exception out of a handler -- answers nobody: that core sends nothing more. The driver watches each probe
-    /// its scenario expects on, and a watch IS answered then (`core_stopped`), behind everything that core had sent:
-    /// the scope is a child of the driver's own, cancelled when that answer comes, and the expectations waiting in it
-    /// end -- `expect` reads which of the two scopes ended.
-    [[nodiscard]] qb::ScopedCoroContext
-    watching(qb::ActorId probe) {
-        auto it = std::find_if(_watched.begin(), _watched.end(), [probe](watched const &w) { return w.probe == probe; });
-        if (it == _watched.end()) {
-            it = _watched.insert(_watched.end(), watched{probe, context().child_token()});
-            watch(probe); // ahead of the first expectation, in the one pipe to the probe's core
-        }
-        return qb::ScopedCoroContext{this, it->stopped};
-    }
-
-    /// The answer of a watch -- the core's own, whose source is the actor it names: a `qb::DownEvent` another actor
-    /// sends the driver ends nothing. Only a core's stop ends the scope: a probe that a `qb::KillEvent` ended has
-    /// answered for itself (`TestProbe::on(qb::KillEvent const &)`), and one that stops with its engine stops with
-    /// this driver.
-    void
-    on(qb::DownEvent const &e) {
-        if (e.reason != qb::DownReason::core_stopped || e.getSource() != e.watched)
-            return;
-        const auto it = std::find_if(_watched.begin(), _watched.end(), [&e](watched const &w) { return w.probe == e.watched; });
-        if (it != _watched.end())
-            it->stopped.cancel();
-    }
 };
 
 /**
- * @brief The actor a `TestKit` adds to run its scenario: it registers the exchanges the scenario asks
- *        (`Expectation` and the `Asks` named to `run<Asks...>()`), so their replies resolve.
+ * @brief The actor a `TestKit` adds to run its scenario: an `Asker`, which registers the exchanges the scenario asks
+ *        other actors with besides (the `Asks` named to `run<Asks...>()`), so their replies resolve.
  */
 template <typename Scenario, typename... Asks>
 class ScenarioDriver final : public ScenarioDriverBase {
@@ -506,14 +603,10 @@ public:
 
     qb::io::async::task<bool>
     onInit() override {
-        registerEvent<Expectation>(*this);
-        registerEvent<qb::DownEvent>(*this); // the watch of the probes the scenario expects on
         (registerEvent<Asks>(*this), ...);
         start_scenario();
         co_return true;
     }
-
-    using ScenarioDriverBase::on;
 
     template <typename A>
     requires(std::is_same_v<A, Asks> || ...)
@@ -568,14 +661,15 @@ struct RunResult {
 
 /**
  * @brief What `expect` and `expect_none` throw when no probe can answer: no probe holds the id -- it ended, or the
- *        id never was a probe's -- or the probe was killed while the expectation waited on it or was on its way.
+ *        id never was a probe's -- or the probe ended while the expectation waited on it or was on its way.
  * @details A probe answers every expectation that reaches it, once: with an event, at its deadline, or -- killed
- *          meanwhile -- with this. Neither "an event arrived" nor "none did": a test asserts one or the other, and a
+ *          meanwhile -- with this; and for a probe that ended without a word, its asker's watch of it answers the same
+ *          (`Asker`). Neither "an event arrived" nor "none did": a test asserts one or the other, and a
  *          probe that is gone proves neither, so no return value of `expect` or `expect_none` stands for it. One type
  *          for the two: an id tells nothing of what held it, so the kit cannot say "never a probe" from "a probe that
  *          ended", and a test does the same with both -- it fails. `what()` says which the kit met. Not a
  *          `std::logic_error`, which the kit keeps for what only the code can be wrong about (a type the probe does not
- *          record): a probe ends at run time.
+ *          record, an actor that expects and is no `Asker`): a probe ends at run time.
  */
 class probe_gone_error : public std::runtime_error {
 public:
@@ -584,28 +678,12 @@ public:
 };
 
 namespace detail {
-/// `probe_gone_error::what()` when the census refused the id, before anything was sent.
-inline constexpr char const *no_live_probe =
-    "qb::test: no probe takes expectations at this id -- it ended, it was killed, or it never was a probe";
-/// `probe_gone_error::what()` when the probe said so itself, killed.
-inline constexpr char const *probe_ended = "qb::test: the probe was killed while this expectation waited on it";
-/// `probe_gone_error::what()` when the scenario's driver heard the probe's core stop.
-inline constexpr char const *probe_core_stopped = "qb::test: the probe's core stopped on an error while this expectation waited on it";
-
 /// The event types no probe records, refused where the probe's type is named. The kit's own exchange. And
 /// `qb::SignalEvent`: a probe registers a handler for each type it records, and that one would replace the handler
 /// that ends an actor when its engine stops -- the probe would record the stop and stay, and no join of its engine,
 /// `TestKit::run()`'s included, would ever return.
 template <typename E>
 concept never_recorded = std::is_same_v<E, Expectation> || std::is_same_v<E, qb::SignalEvent>;
-
-/// The scope an expectation of `ctx`'s actor on `probe` is asked in: the driver's watch of that probe when the actor
-/// is a kit's driver, its own scope otherwise.
-[[nodiscard]] inline qb::ScopedCoroContext
-asking(qb::ScopedCoroContext const &ctx, qb::ActorId probe) {
-    ScenarioDriverBase *const driver = probes().driver(ctx.id());
-    return driver != nullptr ? driver->watching(probe) : ctx;
-}
 
 /**
  * @brief One pass of the calling core: `co_await asker_pass{}` resumes in the turn of the loop of the next one.
@@ -702,16 +780,16 @@ gone(qb::ScopedCoroContext ctx, char const *met) {
  *          in its mailbox through a stall is an arrival -- but one that the same stall kept an actor from sending in
  *          time may be read as late, as by any timeout. A kill closes the probe to new expectations (`expect` throws,
  *          nothing sent), answers the ones waiting, and keeps it up until each one already sent has arrived and been
- *          answered the same, or its asker is gone. A probe that ends otherwise says nothing: stopped with its
- *          engine, its askers stop with it; on a core that stops on an error -- an exception out of a handler -- it
- *          can send nothing; `kill()` called on it through a handle skips the handler. A `TestKit`'s driver hears the
- *          second of those -- it watches the probes its scenario expects on, and a watch is answered when a core
- *          stops, behind all that core sent -- and the scenario's expectations on that probe throw `probe_gone_error`.
- *          An expectation of any other actor waiting on it then, or on its way, waits; the next `expect` throws
- *          -- two passes of its asker's core later, and only when that asker is still there: an engine that stops
- *          takes a probe a pass or two ahead of an asker on another core, and such an asker is told that it is
- *          cancelled, never that its probe is gone (`detail::gone`). An answer goes to its asker whatever became of
- *          it: to one that died meanwhile it is a dead letter on that asker's core, as any event sent to a dead actor.
+ *          answered the same, or its asker is gone. A probe that ends otherwise says nothing itself: stopped with
+ *          its engine, its askers stop with it; on a core that stops on an error -- an exception out of a handler --
+ *          it can send nothing; `kill()` called on it through a handle skips the handler. Its askers hear all three:
+ *          an `Asker` watches the probes it expects on, and a watch is answered whatever ended the probe, behind all
+ *          that its core sent. The expectations of that asker waiting on the probe, or on their way to it, then throw
+ *          `probe_gone_error`, and so does the next `expect` -- two passes of the asker's core later, and only when
+ *          the asker is still there: an engine that stops takes a probe a pass or two ahead of an asker on another
+ *          core, and such an asker is told that it is cancelled, never that its probe is gone (`detail::gone`). An
+ *          answer goes to its asker whatever became of it: to one that died meanwhile it is a dead letter on that
+ *          asker's core, as any event sent to a dead actor.
  *          A probe that records `qb::KillEvent` records the ones it is sent, and ends with the engine. The queues are
  *          unbounded -- a probe is for tests, not for traffic.
  */
@@ -1016,28 +1094,29 @@ public:
  * @brief The next `E` the probe recorded -- at once when one is waiting, else the first to arrive
  *        within @p timeout -- or an empty optional.
  * @tparam E A type the probe records.
- * @param ctx The scenario's context (any `spawn`ed coroutine of an actor that registers
- *            `qb::test::detail::Expectation`, as a `TestKit` driver does).
+ * @param ctx The context of a coroutine of an `Asker`: a `TestKit`'s scenario, or an actor of the test that derives
+ *            from `qb::test::Asker`.
  * @param probe A `TestProbe` recording `E`, on any core.
  * @param timeout How long the PROBE waits for one, on its own clock; zero or less takes only an `E` already
  *        recorded. The asker times nothing: it waits for the probe's answer, however late a stalled host delivers it.
  * @return The event, a copy; empty when none reached the probe in time.
- * @throws std::logic_error when the probe does not record `E` -- a test written against the wrong probe.
+ * @throws std::logic_error when the probe does not record `E` -- a test written against the wrong probe -- and, where
+ *         it is called, nothing sent, when the asking actor is no `Asker`: it would never hear the answer, and nothing
+ *         else ends an expectation.
  * @throws qb::test::probe_gone_error with nothing sent, when no live probe holds @p probe (it ended, or the id never
- *         was a probe's); when a `qb::KillEvent` ends the probe while the expectation waits on it or is on its way; and,
- *         in a `TestKit`'s scenario, when the probe's core stops on an error under it. A probe found gone is told two
- *         passes of the asker's core later, no window waited: by then a stop of the engine that took the probe has
- *         reached the asker, which is cancelled instead.
+ *         was a probe's); and when the probe ends while the expectation waits on it or is on its way -- a
+ *         `qb::KillEvent` (the probe says so), `kill()` called on it, its core stopping on an error (the asker's watch of
+ *         it is answered). A probe found gone is told two passes of the asker's core later, no window waited: by then a
+ *         stop of the engine that took the probe has reached the asker, which is cancelled instead.
  * @throws qb::io::async::cancelled_error when the asking actor is killed, before or meanwhile -- by a stop of its
  *         engine too, which is why a run that ends well prints nothing for an expectation asked as it stops.
  * @note Under a `when_any` an expectation that throws WINS the race, and the exception stays in the result: read the
  *       winner with `get<T>()` (it rethrows) or test `has_exception()` -- `index` alone does not tell an answer from an
  *       error. Out of a `spawn` body of an actor that is not the kit's driver, the error is reported and dropped.
- * @note A probe that ends otherwise than by a `qb::KillEvent` answers nobody: an expectation waiting on it, or on its
- *       way to it, gets no answer from it -- and is never read as "none". Stopped with its engine, the asker stops too
- *       (one that outlives the stop waits). On a core that stops on an error (an exception out of a handler there), a
- *       `TestKit`'s scenario is told -- its driver watches the probe -- and the expectation throws; an expectation of
- *       an actor that is not the kit's driver waits for as long as that actor lives.
+ * @note A probe that ends otherwise than by a `qb::KillEvent` answers nobody itself: an expectation waiting on it, or
+ *       on its way to it, gets no answer from it -- and is never read as "none". Its asker's watch of it is answered
+ *       instead, and the expectation throws. Stopped with its engine, the asker stops too and is told nothing; one
+ *       that outlives the stop -- an actor that ignores the signal -- is told the probe is gone.
  * @note Call it from a spawned coroutine. From an `onInit()`, a probe on ANOTHER core that no `TestKit` added may not
  *       be built yet: the census does not know it, and `expect` throws. And an expectation asked there is bounded by
  *       the asker's core, not by the kit: a core fails an actor whose `onInit()` has not returned when its activation
@@ -1053,6 +1132,9 @@ expect(qb::ScopedCoroContext ctx, qb::ActorId probe, qb::duration timeout) {
     static_assert(std::is_base_of_v<qb::Event, E> && std::is_copy_constructible_v<E>, "qb::test::expect: E is a copyable qb::Event");
     if (ctx.cancelled())
         throw qb::io::async::cancelled_error(); // the asker is being killed: nothing departs (`qb::ask` would send nothing)
+    Asker *const asker = detail::probes().asker(ctx.id());
+    if (asker == nullptr)
+        throw std::logic_error(detail::no_asker); // it would never hear the answer, and nothing else ends the wait
     if (!detail::probes().departs(probe, ctx.id()))
         throw co_await detail::gone(ctx, detail::no_live_probe); // nothing sent: nothing would answer
     // Counted as sent from here. Nothing below stops before the expectation is in the pipe but a failed allocation,
@@ -1065,13 +1147,13 @@ expect(qb::ScopedCoroContext ctx, qb::ActorId probe, qb::duration timeout) {
     std::optional<detail::Expectation> met;
     char const                        *ended = nullptr;
     try {
-        met.emplace(co_await qb::ask(detail::asking(ctx, probe), probe, detail::Expectation{qb::type_id<E>(), wait, false, token, true},
-                                     qb::duration::zero()));
+        met.emplace(co_await qb::ask(detail::asker_scope::watching(*asker, probe), probe,
+                                     detail::Expectation{qb::type_id<E>(), wait, false, token, true}, qb::duration::zero()));
     } catch (qb::io::async::cancelled_error const &) {
         withdraw.armed = false; // nobody is left to withdraw from, or to withdraw
         if (ctx.cancelled())
-            throw;                          // the asker is being killed
-        ended = detail::probe_core_stopped; // the scope its driver watches the probe in ended alone
+            throw;                                         // the asker is being killed
+        ended = detail::asker_scope::ended(*asker, probe); // the scope it watches the probe in ended alone: it lives
     }
     if (ended != nullptr)
         throw co_await detail::gone(ctx, ended);
@@ -1097,12 +1179,11 @@ expect(qb::ScopedCoroContext ctx, qb::ActorId probe, qb::duration timeout) {
  * @param window How long the PROBE watches, on its own clock: the asker times nothing (see `expect`).
  * @return true when none arrived; false when one did. Each is the probe's own answer, never the asker's guess.
  *         Nothing is consumed: a following `expect<E>` still gets the event.
- * @throws std::logic_error when the probe does not record `E`.
- * @throws qb::test::probe_gone_error when no live probe holds @p probe (no window waited), when the probe is killed
- *         meanwhile, and in a `TestKit`'s scenario when its core stops on an error (see `expect`): neither true nor
- *         false stands for a probe that is gone.
+ * @throws std::logic_error when the probe does not record `E`, and when the asking actor is no `Asker` (see `expect`).
+ * @throws qb::test::probe_gone_error when no live probe holds @p probe (no window waited), and when the probe ends
+ *         meanwhile, however it ends (see `expect`): neither true nor false stands for a probe that is gone.
  * @throws qb::io::async::cancelled_error when the asking actor is killed, before or meanwhile.
- * @note A probe that ends otherwise than by a `qb::KillEvent` answers nobody: see `expect`.
+ * @note A probe that ends otherwise than by a `qb::KillEvent` answers nobody itself: see `expect`.
  * @note From an `onInit()`, the asker core's activation deadline ends the window: see `expect`.
  */
 template <typename E>
@@ -1111,6 +1192,9 @@ expect_none(qb::ScopedCoroContext ctx, qb::ActorId probe, qb::duration window) {
     static_assert(std::is_base_of_v<qb::Event, E>, "qb::test::expect_none: E is a qb::Event");
     if (ctx.cancelled())
         throw qb::io::async::cancelled_error();
+    Asker *const asker = detail::probes().asker(ctx.id());
+    if (asker == nullptr)
+        throw std::logic_error(detail::no_asker);
     if (!detail::probes().departs(probe, ctx.id()))
         throw co_await detail::gone(ctx, detail::no_live_probe);
     const auto             wait  = window > qb::duration::zero() ? window : qb::duration::zero();
@@ -1120,13 +1204,13 @@ expect_none(qb::ScopedCoroContext ctx, qb::ActorId probe, qb::duration window) {
     std::optional<detail::Expectation> met;
     char const                        *ended = nullptr;
     try {
-        met.emplace(co_await qb::ask(detail::asking(ctx, probe), probe, detail::Expectation{qb::type_id<E>(), wait, true, token, true},
-                                     qb::duration::zero()));
+        met.emplace(co_await qb::ask(detail::asker_scope::watching(*asker, probe), probe,
+                                     detail::Expectation{qb::type_id<E>(), wait, true, token, true}, qb::duration::zero()));
     } catch (qb::io::async::cancelled_error const &) {
         withdraw.armed = false;
         if (ctx.cancelled())
             throw;
-        ended = detail::probe_core_stopped;
+        ended = detail::asker_scope::ended(*asker, probe);
     }
     if (ended != nullptr)
         throw co_await detail::gone(ctx, ended);
