@@ -131,6 +131,10 @@ public:
 
 using steady = std::chrono::steady_clock;
 
+/// The window of an expectation that only waits for an event the case has caused, or for a death it has: no bound of
+/// its own. The run's watchdog ends a case that is broken, and a host that stalls fails no case that is right.
+constexpr qb::duration until_it_comes = qb::duration::max();
+
 /// Tells `told` -- a probe of `Cancelled` -- `what`. Started as the LAST branch of a `when_all`, it follows what the
 /// branches before it sent: when `told` sits beside their destination, one pipe carries both, in that order.
 qb::io::async::task<void>
@@ -527,7 +531,7 @@ fill_behind_the_reminders(qb::ScopedCoroContext ctx, qb::ActorId probe, qb::Acto
 /// What `told` -- a probe of `Cancelled` -- was told next, or -1.
 qb::io::async::task<int>
 next_told(qb::ScopedCoroContext ctx, qb::ActorId told) {
-    const auto said = co_await qb::test::expect<Cancelled>(ctx, told, 10s);
+    const auto said = co_await qb::test::expect<Cancelled>(ctx, told, until_it_comes);
     co_return said ? said->qty : -1;
 }
 
@@ -573,7 +577,7 @@ kill_once_it_waits(qb::ScopedCoroContext ctx, qb::ActorId asker, qb::ActorId tol
         co_return false;
     ctx.push_to<Mourn>(mourner, asker);
     ctx.push_to<qb::KillEvent>(asker);
-    co_return (co_await qb::test::expect<Cancelled>(ctx, deaths, 10s)).has_value();
+    co_return (co_await qb::test::expect<Cancelled>(ctx, deaths, until_it_comes)).has_value();
 }
 
 /// What an expectation said: the probe's answer, or that the probe was gone -- `killed` when the probe said so itself,
@@ -1246,7 +1250,8 @@ expectations_on_their_way_to_a_killed_probe_are_answered(qb::CoreId probe_core) 
             auto [none, fill] = co_await qb::io::async::when_all(quiet_verdict(ctx, probe, 30s), fill_verdict(ctx, probe, 30s));
             EXPECT_EQ(none, verdict::killed) << "sent to a live probe, received by one already killed: 2, it was left to the asker's watch";
             EXPECT_EQ(fill, verdict::killed);
-            EXPECT_TRUE((co_await qb::test::expect<Cancelled>(ctx, deaths, 10s)).has_value()) << "the last one answered, the probe dies";
+            EXPECT_TRUE((co_await qb::test::expect<Cancelled>(ctx, deaths, until_it_comes)).has_value())
+                << "the last one answered, the probe dies";
         },
         30s);
     EXPECT_TRUE(run) << run.describe();
@@ -1262,7 +1267,7 @@ TEST(TestKit, ExpectYieldsTheEventSentToTheProbeWithItsSender) {
     const auto        desk  = kit.add<Desk>(0, probe);
     const auto        run   = kit.run([desk, probe](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
         ctx.push_to<Order>(desk, 7);
-        const auto filled = co_await qb::test::expect<Filled>(ctx, probe, 2s);
+        const auto filled = co_await qb::test::expect<Filled>(ctx, probe, until_it_comes);
         EXPECT_TRUE(filled.has_value());
         if (filled) {
             EXPECT_EQ(filled->qty, 7);
@@ -1282,7 +1287,7 @@ TEST(TestKit, EachTypeIsAQueueInArrivalOrderAndARecordedEventIsYieldedAtOnce) {
         ctx.push_to<Order>(desk, -5);
         ctx.push_to<Order>(desk, 2);
         ctx.push_to<Order>(desk, 3);
-        const auto first = co_await qb::test::expect<Filled>(ctx, probe, 2s);
+        const auto first = co_await qb::test::expect<Filled>(ctx, probe, until_it_comes);
         // The three fills left the desk in one pass: the second and the third are recorded by the time
         // the first is answered, so a zero timeout takes them -- it never waits.
         const auto second    = co_await qb::test::expect<Filled>(ctx, probe, qb::duration::zero());
@@ -1324,10 +1329,10 @@ TEST(TestKit, AnEventLentToAnAbandonedExpectationReturnsForTheNext) {
     const auto        desk  = kit.add<Desk>(0, probe);
     const auto        run   = kit.run(
         [desk, probe](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
-            const auto race = co_await qb::io::async::when_any(qb::test::expect<Filled>(ctx, probe, 5s), pause(ctx, 50ms));
+            const auto race = co_await qb::io::async::when_any(qb::test::expect<Filled>(ctx, probe, until_it_comes), pause(ctx, 50ms));
             EXPECT_EQ(race.index, 1u) << "the pause wins: the expectation is abandoned";
             ctx.push_to<Order>(desk, 7); // behind the withdrawal: the abandoned waiter is gone, the fill is recorded
-            const auto filled = co_await qb::test::expect<Filled>(ctx, probe, 10s);
+            const auto filled = co_await qb::test::expect<Filled>(ctx, probe, until_it_comes);
             EXPECT_TRUE(filled.has_value()) << "an event lent to an abandoned expectation is never lost";
             if (filled) {
                 EXPECT_EQ(filled->qty, 7);
@@ -1350,11 +1355,12 @@ TEST(TestKit, AnAcknowledgedEventDoesNotComeBack) {
     const auto        run     = kit.run(
         [desk, probe, taken, deaths, mourner, taker](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
             ctx.push_to<Order>(desk, 3);
-            const auto took = co_await qb::test::expect<Cancelled>(ctx, taken, 10s);
+            const auto took = co_await qb::test::expect<Cancelled>(ctx, taken, until_it_comes);
             EXPECT_EQ(took ? took->qty : -1, 3) << "the taker's expectation yielded the fill, and acknowledged it";
             ctx.push_to<Mourn>(mourner, taker);
             ctx.push_to<qb::KillEvent>(taker);
-            EXPECT_TRUE((co_await qb::test::expect<Cancelled>(ctx, deaths, 10s)).has_value()) << "the taker is gone: the probe heard it first";
+            EXPECT_TRUE((co_await qb::test::expect<Cancelled>(ctx, deaths, until_it_comes)).has_value())
+                << "the taker is gone: the probe heard it first";
             EXPECT_TRUE(co_await qb::test::expect_none<Filled>(ctx, probe, 100ms))
                 << "the expectation acknowledged its event: the loan is over";
         },
@@ -1369,7 +1375,7 @@ TEST(TestKit, AnEventArrivingAfterATimedOutExpectationIsKeptForTheNext) {
     const auto        run   = kit.run([desk, probe](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
         EXPECT_FALSE((co_await qb::test::expect<Filled>(ctx, probe, 30ms)).has_value());
         ctx.push_to<Order>(desk, 4);
-        const auto filled = co_await qb::test::expect<Filled>(ctx, probe, 2s);
+        const auto filled = co_await qb::test::expect<Filled>(ctx, probe, until_it_comes);
         EXPECT_EQ(filled ? filled->qty : -1, 4) << "the expired waiter must not swallow a later arrival";
     });
     EXPECT_TRUE(run) << run.describe();
@@ -1385,12 +1391,11 @@ TEST(TestKit, ExpectNoneHoldsOverAQuietWindowBreaksOnAnArrivalAndConsumesNothing
         EXPECT_GE(steady::now() - start, 50ms) << "absence is proven at the end of the window";
 
         ctx.push_to<Order>(desk, 9);
-        const auto broken = steady::now();
-        EXPECT_FALSE(co_await qb::test::expect_none<Filled>(ctx, probe, 30s));
-        EXPECT_LT(steady::now() - broken, 15s) << "an arrival answers at once, not at the end of the window";
-        EXPECT_FALSE(co_await qb::test::expect_none<Filled>(ctx, probe, 30s)) << "already recorded: false at once";
+        // A window with no end: that it is answered at all is the arrival answering it, whatever the host's stalls.
+        EXPECT_FALSE(co_await qb::test::expect_none<Filled>(ctx, probe, until_it_comes));
+        EXPECT_FALSE(co_await qb::test::expect_none<Filled>(ctx, probe, until_it_comes)) << "already recorded: false at once";
 
-        const auto filled = co_await qb::test::expect<Filled>(ctx, probe, 2s);
+        const auto filled = co_await qb::test::expect<Filled>(ctx, probe, until_it_comes);
         EXPECT_EQ(filled ? filled->qty : -1, 9) << "expect_none consumed nothing";
     });
     EXPECT_TRUE(run) << run.describe();
@@ -1401,8 +1406,8 @@ TEST(TestKit, TwoWaitersAtOnceAreServedOldestFirst) {
     const auto        probe = kit.probe<Filled>(0);
     const auto        desk  = kit.add<Desk>(0, probe);
     const auto        run   = kit.run([desk, probe](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
-        auto a      = qb::test::expect<Filled>(ctx, probe, 5s);
-        auto b      = qb::test::expect<Filled>(ctx, probe, 5s);
+        auto a      = qb::test::expect<Filled>(ctx, probe, until_it_comes);
+        auto b      = qb::test::expect<Filled>(ctx, probe, until_it_comes);
         auto orders = [desk](qb::ScopedCoroContext c) -> qb::io::async::task<int> {
             c.push_to<Order>(desk, 1); // behind both expectations, in the one pipe: both waiters are parked first
             c.push_to<Order>(desk, 2);
@@ -1424,7 +1429,7 @@ TEST(TestKit, AProbeOnAnotherCoreIsExpectedAcrossTheMailbox) {
     const auto        run   = kit.run(
         [desk, probe](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
             ctx.push_to<Order>(desk, 11);
-            const auto filled = co_await qb::test::expect<Filled>(ctx, probe, 5s);
+            const auto filled = co_await qb::test::expect<Filled>(ctx, probe, until_it_comes);
             EXPECT_EQ(filled ? filled->qty : -1, 11);
             EXPECT_EQ(filled ? filled->getSource() : qb::ActorId{}, desk);
         },
@@ -1563,7 +1568,7 @@ TEST(TestKit, AKilledAskersWaitersAreLetGoOfAtOnce) {
             EXPECT_TRUE(co_await kill_once_it_waits(ctx, asker, told, mourner, deaths)) << "its two expectations waited, and it is gone";
             for (int qty : {1, 2, 3})
                 ctx.push_to<Order>(desk, qty);
-            const auto first = co_await qb::test::expect<Filled>(ctx, probe, 10s);
+            const auto first = co_await qb::test::expect<Filled>(ctx, probe, until_it_comes);
             EXPECT_EQ(first ? first->qty : -1, 1) << "in arrival order, none lent to the dead asker";
             for (int qty : {2, 3}) { // recorded in the pass that served the first: an expectation that waits for nothing yields them
                 const auto filled = co_await qb::test::expect<Filled>(ctx, probe, 0s);
@@ -1594,7 +1599,8 @@ TEST(TestKit, WhatADeadAskerWasLentComesBackAtOnce) {
             ctx.push_to<Order>(desk, 2);
             ctx.push_to<Mourn>(mourner, asker);
             ctx.push_to<qb::KillEvent>(asker);
-            EXPECT_TRUE((co_await qb::test::expect<Cancelled>(ctx, deaths, 10s)).has_value()) << "it is gone, and the probe heard it first";
+            EXPECT_TRUE((co_await qb::test::expect<Cancelled>(ctx, deaths, until_it_comes)).has_value())
+                << "it is gone, and the probe heard it first";
             for (int qty : {1, 2}) { // both are recorded by now: an expectation that waits for nothing yields them
                 const auto filled = co_await qb::test::expect<Filled>(ctx, probe, 0s);
                 EXPECT_EQ(filled ? filled->qty : -1, qty) << "the dead asker's loan back at its rank, at its death";
@@ -1618,11 +1624,11 @@ TEST(TestKit, LoansGivenBackTogetherComeBackInArrivalOrder) {
             co_await a_turn(ctx, turn); // all three recorded
             // Each branch's expectation reaches the probe before at_once wins (a branch nested in a when_all would not
             // be started); the losers are withdrawn in branch order, the order of their loans.
-            const auto race =
-                co_await qb::io::async::when_any(qb::test::expect<Filled>(ctx, probe, 5s), qb::test::expect<Filled>(ctx, probe, 5s), at_once());
+            const auto race = co_await qb::io::async::when_any(qb::test::expect<Filled>(ctx, probe, until_it_comes),
+                                                               qb::test::expect<Filled>(ctx, probe, until_it_comes), at_once());
             EXPECT_EQ(race.index, 2u);
             for (int qty : {1, 2, 3}) {
-                const auto filled = co_await qb::test::expect<Filled>(ctx, probe, 1s);
+                const auto filled = co_await qb::test::expect<Filled>(ctx, probe, until_it_comes);
                 EXPECT_EQ(filled ? filled->qty : -1, qty) << "arrival order, the loans given back included";
             }
         },
@@ -1705,7 +1711,7 @@ TEST(TestKit, AKilledAskerOnAnotherCoreIsLetGoOfAtOnce) {
             for (int qty : {1, 2, 3})
                 ctx.push_to<Order>(desk, qty);
             for (int qty : {1, 2, 3}) {
-                const auto filled = co_await qb::test::expect<Filled>(ctx, probe, 10s);
+                const auto filled = co_await qb::test::expect<Filled>(ctx, probe, until_it_comes);
                 EXPECT_EQ(filled ? filled->qty : -1, qty) << "none left with the dead asker's waiters";
             }
         },
@@ -1738,7 +1744,8 @@ TEST(TestKit, ADeadAskersLoansReachAParkedWaiterInArrivalOrder) {
                 c.push_to<qb::test::detail::ExpectationWithdrawn>(probe, 777); // 1 back, lent to the hoarder's second
                 EXPECT_EQ(co_await next_told(c, told), 2) << "the hoarder took 1: it holds 2, then 1";
                 // The expectation below waits on the probe when the kill, behind it in the pipe, reaches the hoarder.
-                auto [parked, killed] = co_await qb::io::async::when_all(qb::test::expect<Filled>(c, probe, 10s), kill_now(c, hoarder));
+                auto [parked, killed] =
+                    co_await qb::io::async::when_all(qb::test::expect<Filled>(c, probe, until_it_comes), kill_now(c, hoarder));
                 (void) killed;
                 EXPECT_EQ(parked ? parked->qty : -1, 1) << "the parked waiter got a later event first";
                 const auto next = co_await qb::test::expect<Filled>(c, probe, 0s);
@@ -1803,7 +1810,7 @@ TEST(TestKit, AnExpectationWithdrawnAfterItsAnswerGivesTheEventBackAtOnce) {
         [desk, probe, turn](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
             ctx.push_to<Order>(desk, 8);
             co_await a_turn(ctx, turn); // recorded: the expectation below is answered at once, the event lent
-            const auto race = co_await qb::io::async::when_any(qb::test::expect<Filled>(ctx, probe, 5s), at_once());
+            const auto race = co_await qb::io::async::when_any(qb::test::expect<Filled>(ctx, probe, until_it_comes), at_once());
             EXPECT_EQ(race.index, 1u);
             // The withdrawal left before this expectation, in one pipe: it waits for nothing, and yields the event.
             const auto filled = co_await qb::test::expect<Filled>(ctx, probe, 0s);
@@ -1998,11 +2005,11 @@ TEST(TestKit, AKilledProbeDoesNotOutliveAnAskerWhoseExpectationWasLost) {
         [probe, doomed, deaths, mourner](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
             ctx.push_to<Mourn>(mourner, doomed);
             ctx.push_to<Boom>(doomed);
-            EXPECT_TRUE((co_await qb::test::expect<Cancelled>(ctx, deaths, 10s)).has_value())
+            EXPECT_TRUE((co_await qb::test::expect<Cancelled>(ctx, deaths, until_it_comes)).has_value())
                 << "the asker's core stopped: its watcher said so";
             ctx.push_to<Mourn>(mourner, probe);
             ctx.push_to<qb::KillEvent>(probe);
-            EXPECT_TRUE((co_await qb::test::expect<Cancelled>(ctx, deaths, 10s)).has_value())
+            EXPECT_TRUE((co_await qb::test::expect<Cancelled>(ctx, deaths, until_it_comes)).has_value())
                 << "killed, the probe waited for an expectation that went with its asker's core";
         },
         30s);
@@ -2026,10 +2033,11 @@ TEST(TestKit, AnExpectationOfAnAskerThatIsBeingKilledCountsNothingOnItsWay) {
     const auto        persister = kit.add<Persister>(0, probe, ready, threw);
     const auto        run       = kit.run(
         [probe, ready, deaths, mourner, persister](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
-            EXPECT_TRUE((co_await qb::test::expect<Cancelled>(ctx, ready, 10s)).has_value()) << "the persister waits to be killed";
+            EXPECT_TRUE((co_await qb::test::expect<Cancelled>(ctx, ready, until_it_comes)).has_value()) << "the persister waits to be killed";
             ctx.push_to<Mourn>(mourner, persister);
             ctx.push_to<qb::KillEvent>(persister);
-            EXPECT_TRUE((co_await qb::test::expect<Cancelled>(ctx, deaths, 10s)).has_value()) << "killed: it expected once more on its way out";
+            EXPECT_TRUE((co_await qb::test::expect<Cancelled>(ctx, deaths, until_it_comes)).has_value())
+                << "killed: it expected once more on its way out";
             EXPECT_TRUE(qb::test::detail::probes().ends(probe).empty()) << "an expectation that was never sent is counted on its way";
             // A turn more of this core, whose coroutines ran ahead of the report of the death: the persister's has.
             (void) co_await qb::test::expect<Cancelled>(ctx, ready, 0s);
@@ -2051,7 +2059,8 @@ TEST(TestKit, AnExpectationOfAProbeThatEndedThrowsAtOnce) {
         [probe, deaths, mourner](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
             ctx.push_to<Mourn>(mourner, probe);
             ctx.push_to<qb::KillEvent>(probe);
-            EXPECT_TRUE((co_await qb::test::expect<Cancelled>(ctx, deaths, 10s)).has_value()) << "the probe is gone: its watcher said so";
+            EXPECT_TRUE((co_await qb::test::expect<Cancelled>(ctx, deaths, until_it_comes)).has_value())
+                << "the probe is gone: its watcher said so";
             EXPECT_EQ(co_await quiet_verdict(ctx, probe, 30s), verdict::refused) << "a window on a probe that is not there was sent";
             EXPECT_EQ(co_await fill_verdict(ctx, probe, 30s), verdict::refused) << "an expectation of a probe that is not there was sent";
         },
@@ -2070,8 +2079,9 @@ TEST(TestKit, ARaceWonByAnExpectationThatThrowsCarriesItsError) {
         [probe, deaths, mourner](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
             ctx.push_to<Mourn>(mourner, probe);
             ctx.push_to<qb::KillEvent>(probe);
-            EXPECT_TRUE((co_await qb::test::expect<Cancelled>(ctx, deaths, 10s)).has_value());
-            const auto race = co_await qb::io::async::when_any(qb::test::expect_none<Filled>(ctx, probe, 30s), pause(ctx, 10s));
+            EXPECT_TRUE((co_await qb::test::expect<Cancelled>(ctx, deaths, until_it_comes)).has_value());
+            const auto race =
+                co_await qb::io::async::when_any(qb::test::expect_none<Filled>(ctx, probe, 30s), pause(ctx, std::chrono::hours(1)));
             EXPECT_EQ(race.index, 0u) << "the expectation ends the race at once: it throws";
             EXPECT_TRUE(race.has_exception());
             EXPECT_THROW((void) race.get<bool>(), qb::test::probe_gone_error);
@@ -2193,7 +2203,7 @@ TEST(TestKit, AProbeAddedThroughTheEngineIsKnownOnceItIsBuilt) {
     const auto        run   = kit.run(
         [desk, probe](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
             ctx.push_to<Order>(desk, 7);
-            const auto filled = co_await qb::test::expect<Filled>(ctx, probe, 10s);
+            const auto filled = co_await qb::test::expect<Filled>(ctx, probe, until_it_comes);
             EXPECT_EQ(filled ? filled->qty : -1, 7);
         },
         30s);
@@ -2633,7 +2643,7 @@ TEST(TestKit, AnExpectationOfAProbeWhoseCoreStoppedOnAnErrorThrowsAtOnce) {
         [probe, thrower, deaths, mourner](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
             ctx.push_to<Mourn>(mourner, probe);
             ctx.push_to<Boom>(thrower);
-            EXPECT_TRUE((co_await qb::test::expect<Cancelled>(ctx, deaths, 10s)).has_value())
+            EXPECT_TRUE((co_await qb::test::expect<Cancelled>(ctx, deaths, until_it_comes)).has_value())
                 << "the probe's core stopped: its watcher said so";
             // A core that throws destroys its actors, the probe with them, before it tells its watchers it stopped.
             EXPECT_EQ(co_await quiet_verdict(ctx, probe, 30s), verdict::refused);
@@ -2652,7 +2662,7 @@ TEST(TestKit, AProbeThatRecordsKillEventRecordsTheOnesItIsSent) {
     const auto        probe = kit.probe<qb::KillEvent>(0);
     const auto        run   = kit.run([probe](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
         ctx.push_to<qb::KillEvent>(probe);
-        const auto kill = co_await qb::test::expect<qb::KillEvent>(ctx, probe, 10s);
+        const auto kill = co_await qb::test::expect<qb::KillEvent>(ctx, probe, until_it_comes);
         EXPECT_TRUE(kill.has_value());
         EXPECT_EQ(kill ? kill->getSource() : qb::ActorId{}, ctx.id());
         EXPECT_TRUE(co_await qb::test::expect_none<qb::KillEvent>(ctx, probe, 50ms)) << "recorded once, and the probe still answers";
@@ -2674,7 +2684,8 @@ TEST(TestKit, ACoreThatStopsOnAnErrorRightAfterTheStartDoesNotEndTheRun) {
             [thrower, deaths, mourner](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
                 ctx.push_to<Mourn>(mourner, thrower);
                 ctx.push_to<Boom>(thrower); // core 1 stops on it, in its first passes
-                EXPECT_TRUE((co_await qb::test::expect<Cancelled>(ctx, deaths, 10s)).has_value()) << "core 1 stopped: its watcher said so";
+                EXPECT_TRUE((co_await qb::test::expect<Cancelled>(ctx, deaths, until_it_comes)).has_value())
+                    << "core 1 stopped: its watcher said so";
                 co_await ctx.sleep(50ms); // the scenario runs on, on core 0
             },
             30s);

@@ -1027,7 +1027,10 @@ policy.
   recorded; it sets no deadline now, and the four seconds of the second are a wait that "none" ends whenever they
   pass. Neither assertion changed: the first case fails 6 runs in 6 with the probe's deadline answered on its first
   lap again, the second with the loan's expiry put back, and neither fails in 144 runs with the process stopped 300
-  to 900 ms at a time.
+  to 900 ms at a time. The suite's other waits that only order events -- for a fill a case caused, a report, a death
+  -- had windows of one to ten seconds, under watchdogs of thirty, and one case bounded the time an arrival took to
+  answer `expect_none` (15 s): a host stalled that long failed a kit that was right. They have no window of their own
+  now (`qb::duration::max()`); the watchdog ends a case that is broken.
 
 - **An expectation asked in an `onInit()` ends with its core's activation deadline: stated, and four cases of the kit
   no longer fail on it (Huly QB-57).** `qb::test::expect` sets no deadline of its own, but a core fails an actor whose
