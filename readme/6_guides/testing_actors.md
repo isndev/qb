@@ -74,7 +74,7 @@ TEST(Desk, FillsAnOrder) {
 }
 ```
 
-<!-- src: qb/tests/core/system/patterns/testkit.cpp:1277-1292 -->
+<!-- src: qb/tests/core/system/patterns/testkit.cpp:1310-1325 -->
 
 `run` is `true` when the scenario ran to its end, the watchdog did not fire and the engine reported no error; `run.describe()` names what went wrong (`"the scenario threw: ..."`, `"the watchdog stopped the engine"`, `"the engine reported an error (qb::Main::hasError())"`), or says `"ok"`.
 
@@ -94,7 +94,7 @@ Check with `EXPECT_*` inside the scenario. `ASSERT_*` does not compile there: it
 - **A probe that stops with its engine is silent.** Its askers stop with it, and are told nothing. An asker that outlives the stop — an actor that ignores the signal — is told the probe is gone, as after any other end. Once a probe is gone, however it went, the next `expect` on it throws — two passes of the asker's core later, and only if the asker is still there. An engine stops one core at a time: a probe's core may have reaped it while an asker on another core has not read the stop yet, and an expectation asked in between finds no probe. Told at once, that asker got an error for a probe that had only stopped a pass ahead of it — out of a `spawn` body, where nothing catches it, a `CRITICAL` line on stderr in a run that went well. Two passes later the stop has reached it: an asker that ends on the stop is cancelled with its actor, and nothing is printed. One that handles the stop itself and ends a pass or more later — a graceful shutdown — is still there, and is told the probe is gone, as one that ignores the stop is: out of a `spawn` body that error is printed, so such an asker catches it. A probe that records `qb::KillEvent` — the destination an actor under test kills — records the ones it is sent, and ends with the engine.
 - **Expect from a spawned coroutine.** A `TestKit` announces a probe as it adds it, so an `expect` that runs before the probe is built — from an `onInit()`, which runs while the other cores still build their actors — is taken, and answered once the engine has started. A probe added through `engine().addActor` is known from its constructor only: expect on it from a spawned coroutine, which runs once every core has built its actors. And an expectation asked in an `onInit()` is bounded by the asker's core, not by the kit: a core fails an actor whose `onInit()` has not returned when its activation deadline passes — `qb::VirtualCore::activation_deadline_ns`, five seconds unless you set it before `run()`, counted from the first suspension of that `onInit()`. The expectation throws `cancelled_error` then and the actor is removed: a window longer than what is left of those seconds never gets its answer, and a machine that stalls through them ends one that would have got it. Raise the deadline for such a test, or expect from a spawned coroutine.
 
-<!-- src: qb/src/qb/core/TestKit.h:967-1154 (record, on(Expectation), on(ExpectationDeadline), the loan's acknowledgement and withdrawal, on(DownEvent)); qb/tests/core/system/patterns/testkit.cpp:1294-1451; qb/tests/core/system/patterns/testkit.cpp:1544-1800; qb/tests/core/system/patterns/testkit.cpp:1815-1834; qb/src/qb/core/TestKit.h:205-373 (the census of the probes); qb/src/qb/core/TestKit.h:1163-1183 (on(KillEvent)); qb/src/qb/core/TestKit.h:1023-1025 (the destructor, which says nothing); qb/src/qb/core/TestKit.h:477-485 (an asker's watch of a probe); qb/src/qb/core/TestKit.h:508-517 (its answer); qb/src/qb/core/TestKit.h:832-839 (a probe found gone, told to an asker that is still there); qb/tests/core/system/patterns/testkit.cpp:1836-2684; qb/src/qb/core/TestKit.h:947-952 (lend); qb/tests/core/system/patterns/testkit.cpp:1773-1800 -->
+<!-- src: qb/src/qb/core/TestKit.h:967-1154 (record, on(Expectation), on(ExpectationDeadline), the loan's acknowledgement and withdrawal, on(DownEvent)); qb/tests/core/system/patterns/testkit.cpp:1327-1484; qb/tests/core/system/patterns/testkit.cpp:1577-1833; qb/tests/core/system/patterns/testkit.cpp:1848-1867; qb/src/qb/core/TestKit.h:205-373 (the census of the probes); qb/src/qb/core/TestKit.h:1163-1183 (on(KillEvent)); qb/src/qb/core/TestKit.h:1023-1025 (the destructor, which says nothing); qb/src/qb/core/TestKit.h:477-485 (an asker's watch of a probe); qb/src/qb/core/TestKit.h:508-517 (its answer); qb/src/qb/core/TestKit.h:832-839 (a probe found gone, told to an asker that is still there); qb/tests/core/system/patterns/testkit.cpp:1869-2729; qb/src/qb/core/TestKit.h:947-952 (lend); qb/tests/core/system/patterns/testkit.cpp:1806-1833 -->
 
 ## When the scenario asks other actors
 
@@ -109,7 +109,7 @@ const auto run = kit.run<Quote>([quoter](qb::ScopedCoroContext ctx) -> qb::io::a
 
 Without `<Quote>` the reply reaches a driver that does not handle it — a dead letter — and the `ask` times out.
 
-<!-- src: qb/tests/core/system/patterns/testkit.cpp:1475-1500 -->
+<!-- src: qb/tests/core/system/patterns/testkit.cpp:1508-1533 -->
 
 ## An actor that expects
 
@@ -137,7 +137,7 @@ public:
 - **An error out of a `spawn` body is reported and dropped.** A scenario that lets `probe_gone_error` escape ends its run on it; in a coroutine of another actor nothing receives it, and the core prints it. Catch it there, and tell a probe.
 - **Not from an `onInit()`.** A core holds back what reaches an actor whose `onInit()` has not returned, and replays it, in order, once the actor is active — the answer of a watch with the rest: that order is a watch's promise, behind all that the watched actor's core had sent. So an expectation asked while its `Asker` is activating — in its `onInit()`, or in a coroutine it spawned there — is not ended by the watch. It ends with the probe's own answer (a killed probe's included: an answer to an ask passes the hold), the asker's kill, or the activation deadline (above); with that deadline off (`activation_deadline_ns = 0`), a probe that ends without a word leaves it waiting until the engine stops. Expect from a spawned coroutine of an actor that is active when the probe may end that way.
 
-<!-- src: qb/src/qb/core/TestKit.h:461-518 (Asker); qb/src/qb/core/TestKit.h:531-587 (the scope an expectation is asked in); qb/tests/core/system/patterns/testkit.cpp:2396-2525 -->
+<!-- src: qb/src/qb/core/TestKit.h:461-518 (Asker); qb/src/qb/core/TestKit.h:531-587 (the scope an expectation is asked in); qb/tests/core/system/patterns/testkit.cpp:2438-2569 -->
 
 ## The engine and the run
 
@@ -149,7 +149,7 @@ public:
 - **An error on another core does not end the run.** A core other than the driver's that stops on an error — an exception out of a handler there — sets `engine_error` and ends nothing: the scenario runs on, to its end or to the watchdog.
 - **Capture by value.** The scenario is stored in the driver for the run, as any `spawn` body: capture ids and values, never references to the test's locals.
 
-<!-- src: qb/src/qb/core/TestKit.h:1419-1475 (run); qb/tests/core/system/patterns/testkit.cpp:1502-1542; qb/tests/core/system/patterns/testkit.cpp:2686-2710; qb/tests/core/system/patterns/testkit.cpp:2712-2722; qb/tests/core/system/patterns/testkit.cpp:2724-2750; qb/tests/core/system/patterns/testkit.cpp:2752-2774 -->
+<!-- src: qb/src/qb/core/TestKit.h:1419-1475 (run); qb/tests/core/system/patterns/testkit.cpp:1535-1575; qb/tests/core/system/patterns/testkit.cpp:2731-2755; qb/tests/core/system/patterns/testkit.cpp:2757-2767; qb/tests/core/system/patterns/testkit.cpp:2769-2795; qb/tests/core/system/patterns/testkit.cpp:2797-2819 -->
 
 ## Pitfalls
 
