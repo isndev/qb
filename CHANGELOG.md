@@ -963,7 +963,12 @@ policy.
   added after it. Six mutants are caught: an expectation that only a core's stop ends, a watch that only the
   driver holds, each of the two ends read as the other, a stranger left to expect, and an asker known by its id
   alone; the forty-three of the asker's fix and the ten of the two beside it are caught again on this header,
-  fourteen of them re-pointed at the code that moved into `Asker`.
+  fourteen of them re-pointed at the code that moved into `Asker`. Two of those were caught again only once their
+  cases read WHO told the expectation, since the watch now gives the same verdict by another way: a census that
+  refuses nothing (the expectation is sent, and the watch of a probe that is gone answers it -- the cases read that
+  the census refused it, nothing sent), and an expectation of an asker being killed that is not told it is
+  cancelled (its actor is gone when its coroutine resumes, and so is its seat: it was told it is no `Asker` -- the
+  case reads what it threw).
 
 - **An asker that the stop of its engine has not reached is no longer told that its probe is gone (Huly QB-57).** An
   engine stops one core at a time. A probe's core could have read the stop and reaped the probe while an asker on

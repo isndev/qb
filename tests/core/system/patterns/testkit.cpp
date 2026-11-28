@@ -572,15 +572,19 @@ kill_once_it_waits(qb::ScopedCoroContext ctx, qb::ActorId asker, qb::ActorId tol
 }
 
 /// What an expectation said: the probe's answer, or that the probe was gone -- `killed` when the probe said so itself,
-/// as a `qb::KillEvent` ended it; `gone` when the kit found it so: no probe at the id, or the asker's watch of it
-/// answered. Both throw the same error, and a case that is about WHO tells an expectation has to read which.
-enum class verdict { none = -1, quiet, arrival, gone, killed };
+/// as a `qb::KillEvent` ended it; `refused` when the census held no probe at the id and nothing was sent; `gone` when
+/// the asker's watch of the probe was answered. The three throw the same error, and a case that is about WHO tells an
+/// expectation has to read which: with every asker watching its probes, each end is also told by the watch.
+enum class verdict { none = -1, quiet, arrival, gone, killed, refused };
 
 [[nodiscard]] inline verdict
 gone_how(qb::test::probe_gone_error const &e) {
-    return std::string_view(e.what()).find("the probe was killed while this expectation waited on it") != std::string_view::npos
-               ? verdict::killed
-               : verdict::gone;
+    const std::string_view what(e.what());
+    if (what.find("the probe was killed while this expectation waited on it") != std::string_view::npos)
+        return verdict::killed;
+    if (what.find("no probe takes expectations at this id") != std::string_view::npos)
+        return verdict::refused;
+    return verdict::gone;
 }
 
 template <typename E>
@@ -616,17 +620,21 @@ kill_now(qb::ScopedCoroContext ctx, qb::ActorId target) {
 
 /// An asker whose coroutine outlives its kill long enough to expect once more: it tells `ready` it waits, catches the
 /// cancellation, and expects again on a scope that is cancelled -- nothing departs from an actor that is being killed.
+/// It records what that last expectation threw in `threw` (1: `cancelled_error`; 2: `std::logic_error`; 3: anything
+/// else): the actor is gone when the coroutine resumes, and its seat with it.
 class Persister : public qb::test::Asker {
-    qb::ActorId _probe;
-    qb::ActorId _ready;
+    qb::ActorId                       _probe;
+    qb::ActorId                       _ready;
+    std::shared_ptr<std::atomic<int>> _threw;
 
 public:
-    Persister(qb::ActorId probe, qb::ActorId ready)
+    Persister(qb::ActorId probe, qb::ActorId ready, std::shared_ptr<std::atomic<int>> threw)
         : _probe(probe)
-        , _ready(ready) {}
+        , _ready(ready)
+        , _threw(std::move(threw)) {}
     qb::io::async::task<bool>
     onInit() override {
-        spawn([probe = _probe, ready = _ready](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
+        spawn([probe = _probe, ready = _ready, threw = _threw](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
             ctx.push_to<Cancelled>(ready, 1);
             try {
                 co_await ctx.until_cancelled();
@@ -635,6 +643,11 @@ public:
             try {
                 (void) co_await qb::test::expect<Filled>(ctx, probe, 30s);
             } catch (qb::io::async::cancelled_error const &) {
+                threw->store(1);
+            } catch (std::logic_error const &) {
+                threw->store(2);
+            } catch (...) {
+                threw->store(3);
             }
         });
         co_return true;
@@ -1853,12 +1866,15 @@ TEST(TestKit, AKilledProbeDoesNotOutliveAnAskerWhoseExpectationWasLost) {
 TEST(TestKit, AnExpectationOfAnAskerThatIsBeingKilledCountsNothingOnItsWay) {
     // expect on a cancelled scope sends nothing (qb::ask does not), so it counts nothing as sent. A count that nothing
     // follows would stay until a probe that was killed heard its asker gone: read here as the kill handler reads it.
+    // And it is told what it is -- cancelled -- before anything else is asked: by the time its coroutine resumes, the
+    // actor is gone and so is its seat among the askers, which an expectation of an actor that is no Asker reads.
+    const auto        threw = std::make_shared<std::atomic<int>>(0);
     qb::test::TestKit kit;
     const auto        probe     = kit.probe<Filled>(0);
     const auto        ready     = kit.probe<Cancelled>(0);
     const auto        deaths    = kit.probe<Cancelled>(0);
     const auto        mourner   = kit.add<Mourner>(0, deaths);
-    const auto        persister = kit.add<Persister>(0, probe, ready);
+    const auto        persister = kit.add<Persister>(0, probe, ready, threw);
     const auto        run       = kit.run(
         [probe, ready, deaths, mourner, persister](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
             EXPECT_TRUE((co_await qb::test::expect<Cancelled>(ctx, ready, 10s)).has_value()) << "the persister waits to be killed";
@@ -1866,9 +1882,12 @@ TEST(TestKit, AnExpectationOfAnAskerThatIsBeingKilledCountsNothingOnItsWay) {
             ctx.push_to<qb::KillEvent>(persister);
             EXPECT_TRUE((co_await qb::test::expect<Cancelled>(ctx, deaths, 10s)).has_value()) << "killed: it expected once more on its way out";
             EXPECT_TRUE(qb::test::detail::probes().ends(probe).empty()) << "an expectation that was never sent is counted on its way";
+            // A turn more of this core, whose coroutines ran ahead of the report of the death: the persister's has.
+            (void) co_await qb::test::expect<Cancelled>(ctx, ready, 0s);
         },
         30s);
     EXPECT_TRUE(run) << run.describe();
+    EXPECT_EQ(threw->load(), 1) << "0: it did not expect again; 2: it was told it is no asker; 3: something else";
 }
 
 TEST(TestKit, AnExpectationOfAProbeThatEndedThrowsAtOnce) {
@@ -1884,8 +1903,8 @@ TEST(TestKit, AnExpectationOfAProbeThatEndedThrowsAtOnce) {
             ctx.push_to<Mourn>(mourner, probe);
             ctx.push_to<qb::KillEvent>(probe);
             EXPECT_TRUE((co_await qb::test::expect<Cancelled>(ctx, deaths, 10s)).has_value()) << "the probe is gone: its watcher said so";
-            EXPECT_EQ(co_await quiet_verdict(ctx, probe, 30s), verdict::gone) << "a window on a probe that is not there got a verdict";
-            EXPECT_EQ(co_await fill_verdict(ctx, probe, 30s), verdict::gone) << "an expectation of a probe that is not there got a verdict";
+            EXPECT_EQ(co_await quiet_verdict(ctx, probe, 30s), verdict::refused) << "a window on a probe that is not there was sent";
+            EXPECT_EQ(co_await fill_verdict(ctx, probe, 30s), verdict::refused) << "an expectation of a probe that is not there was sent";
         },
         30s);
     EXPECT_TRUE(run) << run.describe();
@@ -1907,6 +1926,13 @@ TEST(TestKit, ARaceWonByAnExpectationThatThrowsCarriesItsError) {
             EXPECT_EQ(race.index, 0u) << "the expectation ends the race at once: it throws";
             EXPECT_TRUE(race.has_exception());
             EXPECT_THROW((void) race.get<bool>(), qb::test::probe_gone_error);
+            std::string met;
+            try {
+                (void) race.get<bool>();
+            } catch (qb::test::probe_gone_error const &e) {
+                met = e.what();
+            }
+            EXPECT_NE(met.find("no probe takes expectations at this id"), std::string::npos) << "refused before anything was sent: " << met;
         },
         30s);
     EXPECT_TRUE(run) << run.describe();
@@ -1919,10 +1945,10 @@ TEST(TestKit, AnIdThatNeverWasAProbeThrowsAtOnce) {
     const auto        probe = kit.probe<Filled>(0);
     const auto        desk  = kit.add<Desk>(0, probe);
     const auto        run   = kit.run([desk](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
-        EXPECT_EQ(co_await quiet_verdict(ctx, desk, 30s), verdict::gone);
-        EXPECT_EQ(co_await fill_verdict(ctx, desk, 30s), verdict::gone);
-        EXPECT_EQ(co_await quiet_verdict(ctx, qb::ActorId{}, 30s), verdict::gone);
-        EXPECT_EQ(co_await quiet_verdict(ctx, qb::BroadcastId(0), 30s), verdict::gone)
+        EXPECT_EQ(co_await quiet_verdict(ctx, desk, 30s), verdict::refused);
+        EXPECT_EQ(co_await fill_verdict(ctx, desk, 30s), verdict::refused);
+        EXPECT_EQ(co_await quiet_verdict(ctx, qb::ActorId{}, 30s), verdict::refused);
+        EXPECT_EQ(co_await quiet_verdict(ctx, qb::BroadcastId(0), 30s), verdict::refused)
             << "a broadcast is no probe: every actor of the core would get it";
         std::string met;
         try {
@@ -2224,7 +2250,7 @@ TEST(TestKit, AProbeEndedThroughAHandleEndsTheExpectationsOnIt) {
             (void) killed;
             EXPECT_EQ(none, verdict::gone) << "a window on a probe that was killed through a handle neither held nor broke";
             EXPECT_NE(why.find("said nothing"), std::string::npos) << why;
-            EXPECT_EQ(co_await quiet_verdict(ctx, probe, 30s), verdict::gone) << "and the next expectation finds no probe";
+            EXPECT_EQ(co_await quiet_verdict(ctx, probe, 30s), verdict::refused) << "and the next expectation finds no probe";
         },
         30s);
     EXPECT_TRUE(run) << run.describe();
@@ -2375,8 +2401,9 @@ TEST(TestKit, AnExpectationOfAProbeWhoseCoreStoppedOnAnErrorThrowsAtOnce) {
             ctx.push_to<Boom>(thrower);
             EXPECT_TRUE((co_await qb::test::expect<Cancelled>(ctx, deaths, 10s)).has_value())
                 << "the probe's core stopped: its watcher said so";
-            EXPECT_EQ(co_await quiet_verdict(ctx, probe, 30s), verdict::gone);
-            EXPECT_EQ(co_await fill_verdict(ctx, probe, 30s), verdict::gone);
+            // A core that throws destroys its actors, the probe with them, before it tells its watchers it stopped.
+            EXPECT_EQ(co_await quiet_verdict(ctx, probe, 30s), verdict::refused);
+            EXPECT_EQ(co_await fill_verdict(ctx, probe, 30s), verdict::refused);
         },
         30s);
     EXPECT_TRUE(run.completed) << run.describe();
