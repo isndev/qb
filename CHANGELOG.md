@@ -939,6 +939,23 @@ policy.
 
 ### Fixed
 
+- **An asker that the stop of its engine has not reached is no longer told that its probe is gone (Huly QB-57).** An
+  engine stops one core at a time. A probe's core could have read the stop and reaped the probe while an asker on
+  another core, in a pass that began before, had not: an expectation asked then found no probe in the census and
+  threw `probe_gone_error` at once. Out of the `spawn` body of an actor that is not the kit's driver nothing catches
+  it, and the core reports it: a `CRITICAL` line on stderr in a run that had gone well, for a probe that had only
+  stopped a pass ahead of its asker. A probe found gone is now told two passes of the asker's core later
+  (`detail::gone`, on a request deadline: a pass of the core, never a pump of its loop) and only to an asker that is
+  still there. A stop is a signal, and a core hands a signal to its actors in the receive of the pass that reads it:
+  two passes after the probe was found gone, a stop that took the probe has reached the asker, which is cancelled
+  like any actor that stops -- `cancelled_error`, which a `spawn` body ends on in silence. An asker that is not
+  stopped is told the probe is gone, as before, with no window waited. The same holds for an expectation that a core's
+  stop ends under a scenario. Proven by `TestKit.AnAskerTheStopOfItsEngineHasNotReachedIsNotToldItsProbeIsGone`: an
+  asker holds its core from before the scenario lets the engine stop until the probe's core has reaped the probe,
+  then expects, and the case reads stderr -- the line was printed in 6 runs of 6 on the kit as it was, in none of 10
+  after. Three mutants are caught: the telling at once, one pass instead of two, and an asker told although it is
+  cancelled.
+
 - **Two cases of the test kit are ordered by events, and no longer fail on a kit that is right (Huly QB-57).**
   `TestKit.AnEventThatReachedTheProbesCoreBeforeItsDeadlineIsNotAnsweredAsNone` armed two windows of 300 ms and
   held the probe's core a pass later: a host that stalled 300 ms in that gap ended the windows first -- a "none" the

@@ -79,6 +79,7 @@
 #include <array>
 #include <atomic>
 #include <chrono>
+#include <coroutine>
 #include <qb/core/detail/monotonic_wait.h> // std::condition_variable, its timed wait off the time of day (Huly QB-1227)
 #include <cstddef>
 #include <cstdint>
@@ -605,6 +606,70 @@ asking(qb::ScopedCoroContext const &ctx, qb::ActorId probe) {
     ScenarioDriverBase *const driver = probes().driver(ctx.id());
     return driver != nullptr ? driver->watching(probe) : ctx;
 }
+
+/**
+ * @brief One pass of the calling core: `co_await asker_pass{}` resumes in the turn of the loop of the next one.
+ * @details A request deadline of zero (`qb::detail::request_deadline`, what times a `qb::ask`): fired at the head of
+ *          a pass and by nothing else -- not by a pump of the loop, as a timer or a yield is, in an `onInit()` that
+ *          runs before the engine has started. Where it resumes is known: behind the receive of the pass that
+ *          suspended it, ahead of the next. Not cancel-aware: what waits on it reads its scope when it resumes.
+ */
+struct asker_pass {
+    static constexpr char const *qb_suspension_kind = "qb::test pass"; ///< suspension tracking (coroutine/tracking.h)
+
+    qb::detail::request_deadline deadline{};
+    std::coroutine_handle<>      cont;
+
+    asker_pass() noexcept                     = default;
+    asker_pass(const asker_pass &)            = delete;
+    asker_pass(asker_pass &&)                 = delete;
+    asker_pass &operator=(const asker_pass &) = delete;
+    asker_pass &operator=(asker_pass &&)      = delete;
+    ~asker_pass() {
+        qb::detail::deadline_disarm(deadline); // a frame destroyed while it waits: the core's list no longer names it
+    }
+
+    [[nodiscard]] bool
+    await_ready() const noexcept {
+        return false;
+    }
+    void
+    await_suspend(std::coroutine_handle<> h) noexcept {
+        ::qb::io::async::detail::track_suspension(h.address(), qb_suspension_kind);
+        cont = h;
+        qb::detail::deadline_arm(deadline, qb::duration::zero(), &asker_pass::on_pass, this);
+    }
+    void
+    await_resume() const noexcept {}
+
+private:
+    // Fired by the core's pass (`deadlines_check`), outside any handler; the node is already unlinked.
+    static void
+    on_pass(void *self) noexcept {
+        qb::io::async::schedule_via_current(static_cast<asker_pass *>(self)->cont);
+    }
+};
+
+/**
+ * @brief What an asker throws for a probe that is gone -- once it is known that the asker is not going with it.
+ * @details An engine that stops takes the probes and their askers together, one core at a time: a probe's core may
+ *          have reaped it while the asker's has not read the stop yet. Told at once, that asker got an error for a
+ *          probe that had only stopped a pass ahead of it -- out of a `spawn` body, a line on stderr in a run that had
+ *          gone well. A stop is a signal, and a core that reads one hands it to its actors in the receive of that
+ *          very pass: two passes of the asker's core after the probe was found gone, a stop that took the probe has
+ *          reached the asker. It is then cancelled, and that is what it is told; an asker still there is told the
+ *          probe is gone.
+ * @return The error to throw.
+ * @throws qb::io::async::cancelled_error when the asker ended meanwhile.
+ */
+[[nodiscard]] inline qb::io::async::task<probe_gone_error>
+gone(qb::ScopedCoroContext ctx, char const *met) {
+    co_await asker_pass{}; // resumes ahead of the receive that reads a stop raised before the probe went
+    co_await asker_pass{}; // and behind it
+    if (ctx.cancelled())
+        throw qb::io::async::cancelled_error();
+    co_return probe_gone_error(met);
+}
 } // namespace detail
 
 /**
@@ -635,17 +700,20 @@ asking(qb::ScopedCoroContext const &ctx, qb::ActorId probe) {
  *          (`probe_gone_error` on the asker's side). The deadline is wall time on the probe's core: the probe answers
  *          it once it has read the events ADDRESSED TO IT that had reached that core by then, so an event that waited
  *          in its mailbox through a stall is an arrival -- but one that the same stall kept an actor from sending in
- *          time may be read as late, as by any timeout. A kill closes the probe to new expectations (`expect` throws at once,
+ *          time may be read as late, as by any timeout. A kill closes the probe to new expectations (`expect` throws,
  *          nothing sent), answers the ones waiting, and keeps it up until each one already sent has arrived and been
  *          answered the same, or its asker is gone. A probe that ends otherwise says nothing: stopped with its
  *          engine, its askers stop with it; on a core that stops on an error -- an exception out of a handler -- it
  *          can send nothing; `kill()` called on it through a handle skips the handler. A `TestKit`'s driver hears the
  *          second of those -- it watches the probes its scenario expects on, and a watch is answered when a core
  *          stops, behind all that core sent -- and the scenario's expectations on that probe throw `probe_gone_error`.
- *          An expectation of any other actor waiting on it then, or on its way, waits; the next `expect` throws at
- *          once. An answer goes to its asker whatever became of it: to one that died meanwhile it is a dead letter
- *          on that asker's core, as any event sent to a dead actor. A probe that records `qb::KillEvent` records the
- *          ones it is sent, and ends with the engine. The queues are unbounded -- a probe is for tests, not for traffic.
+ *          An expectation of any other actor waiting on it then, or on its way, waits; the next `expect` throws
+ *          -- two passes of its asker's core later, and only when that asker is still there: an engine that stops
+ *          takes a probe a pass or two ahead of an asker on another core, and such an asker is told that it is
+ *          cancelled, never that its probe is gone (`detail::gone`). An answer goes to its asker whatever became of
+ *          it: to one that died meanwhile it is a dead letter on that asker's core, as any event sent to a dead actor.
+ *          A probe that records `qb::KillEvent` records the ones it is sent, and ends with the engine. The queues are
+ *          unbounded -- a probe is for tests, not for traffic.
  */
 template <typename... Events>
 requires(!detail::never_recorded<Events> && ...)
@@ -955,10 +1023,13 @@ public:
  *        recorded. The asker times nothing: it waits for the probe's answer, however late a stalled host delivers it.
  * @return The event, a copy; empty when none reached the probe in time.
  * @throws std::logic_error when the probe does not record `E` -- a test written against the wrong probe.
- * @throws qb::test::probe_gone_error at once, nothing sent, when no live probe holds @p probe (it ended, or the id never
+ * @throws qb::test::probe_gone_error with nothing sent, when no live probe holds @p probe (it ended, or the id never
  *         was a probe's); when a `qb::KillEvent` ends the probe while the expectation waits on it or is on its way; and,
- *         in a `TestKit`'s scenario, when the probe's core stops on an error under it.
- * @throws qb::io::async::cancelled_error when the asking actor is killed, before or meanwhile.
+ *         in a `TestKit`'s scenario, when the probe's core stops on an error under it. A probe found gone is told two
+ *         passes of the asker's core later, no window waited: by then a stop of the engine that took the probe has
+ *         reached the asker, which is cancelled instead.
+ * @throws qb::io::async::cancelled_error when the asking actor is killed, before or meanwhile -- by a stop of its
+ *         engine too, which is why a run that ends well prints nothing for an expectation asked as it stops.
  * @note Under a `when_any` an expectation that throws WINS the race, and the exception stays in the result: read the
  *       winner with `get<T>()` (it rethrows) or test `has_exception()` -- `index` alone does not tell an answer from an
  *       error. Out of a `spawn` body of an actor that is not the kit's driver, the error is reported and dropped.
@@ -983,7 +1054,7 @@ expect(qb::ScopedCoroContext ctx, qb::ActorId probe, qb::duration timeout) {
     if (ctx.cancelled())
         throw qb::io::async::cancelled_error(); // the asker is being killed: nothing departs (`qb::ask` would send nothing)
     if (!detail::probes().departs(probe, ctx.id()))
-        throw probe_gone_error(detail::no_live_probe); // nothing sent: nothing would answer
+        throw co_await detail::gone(ctx, detail::no_live_probe); // nothing sent: nothing would answer
     // Counted as sent from here. Nothing below stops before the expectation is in the pipe but a failed allocation,
     // and a count that never arrives ends with its asker: a killed probe watches the askers it waits for.
     const auto             wait  = timeout > qb::duration::zero() ? timeout : qb::duration::zero();
@@ -992,15 +1063,18 @@ expect(qb::ScopedCoroContext ctx, qb::ActorId probe, qb::duration timeout) {
     // No deadline of the asker's (zero: `qb::ask` waits for the reply): the probe's clock is the only one. A timeout
     // of its own here -- the probe's wait plus a grace -- came due in the same pass as a late answer, and ran first.
     std::optional<detail::Expectation> met;
+    char const                        *ended = nullptr;
     try {
         met.emplace(co_await qb::ask(detail::asking(ctx, probe), probe, detail::Expectation{qb::type_id<E>(), wait, false, token, true},
                                      qb::duration::zero()));
     } catch (qb::io::async::cancelled_error const &) {
         withdraw.armed = false; // nobody is left to withdraw from, or to withdraw
         if (ctx.cancelled())
-            throw;                                          // the asker is being killed
-        throw probe_gone_error(detail::probe_core_stopped); // the scope its driver watches the probe in ended alone
+            throw;                          // the asker is being killed
+        ended = detail::probe_core_stopped; // the scope its driver watches the probe in ended alone
     }
+    if (ended != nullptr)
+        throw co_await detail::gone(ctx, ended);
     auto const &answer = *met;
     withdraw.armed     = false; // answered: the probe holds nothing more for it
     if (answer.gone)
@@ -1024,9 +1098,9 @@ expect(qb::ScopedCoroContext ctx, qb::ActorId probe, qb::duration timeout) {
  * @return true when none arrived; false when one did. Each is the probe's own answer, never the asker's guess.
  *         Nothing is consumed: a following `expect<E>` still gets the event.
  * @throws std::logic_error when the probe does not record `E`.
- * @throws qb::test::probe_gone_error at once when no live probe holds @p probe, when the probe is killed meanwhile, and
- *         in a `TestKit`'s scenario when its core stops on an error (see `expect`): neither true nor false stands for
- *         a probe that is gone.
+ * @throws qb::test::probe_gone_error when no live probe holds @p probe (no window waited), when the probe is killed
+ *         meanwhile, and in a `TestKit`'s scenario when its core stops on an error (see `expect`): neither true nor
+ *         false stands for a probe that is gone.
  * @throws qb::io::async::cancelled_error when the asking actor is killed, before or meanwhile.
  * @note A probe that ends otherwise than by a `qb::KillEvent` answers nobody: see `expect`.
  * @note From an `onInit()`, the asker core's activation deadline ends the window: see `expect`.
@@ -1038,12 +1112,13 @@ expect_none(qb::ScopedCoroContext ctx, qb::ActorId probe, qb::duration window) {
     if (ctx.cancelled())
         throw qb::io::async::cancelled_error();
     if (!detail::probes().departs(probe, ctx.id()))
-        throw probe_gone_error(detail::no_live_probe);
+        throw co_await detail::gone(ctx, detail::no_live_probe);
     const auto             wait  = window > qb::duration::zero() ? window : qb::duration::zero();
     const auto             token = ++detail::expectation_tokens;
     detail::WithdrawOnExit withdraw{ctx, probe, token};
     // No deadline of the asker's: its timeout was read as "an event arrived" (see `expect`).
     std::optional<detail::Expectation> met;
+    char const                        *ended = nullptr;
     try {
         met.emplace(co_await qb::ask(detail::asking(ctx, probe), probe, detail::Expectation{qb::type_id<E>(), wait, true, token, true},
                                      qb::duration::zero()));
@@ -1051,8 +1126,10 @@ expect_none(qb::ScopedCoroContext ctx, qb::ActorId probe, qb::duration window) {
         withdraw.armed = false;
         if (ctx.cancelled())
             throw;
-        throw probe_gone_error(detail::probe_core_stopped);
+        ended = detail::probe_core_stopped;
     }
+    if (ended != nullptr)
+        throw co_await detail::gone(ctx, ended);
     auto const &answer = *met;
     withdraw.armed     = false;
     if (answer.gone)

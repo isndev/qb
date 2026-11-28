@@ -820,6 +820,73 @@ public:
     }
 };
 
+/// What a case shares with an asker that holds its core through the stop of its engine.
+struct StopFlags {
+    std::atomic<bool> holding{false};  ///< The asker holds its core: a stop raised now is one it has not read
+    std::atomic<bool> reaped{false};   ///< The probe's core reaped the probe, and has turned a pass since
+    std::atomic<bool> expected{false}; ///< The asker left its hold because of `reaped`, and expected again
+};
+
+struct Later : qb::Event {};
+
+/// Outlives the pass in which its core reads the engine's stop: the signal has it send itself an event, and it ends on
+/// that event -- read in the next pass, once the actors the signal ended have been reaped. It says so.
+class Lingerer : public qb::Actor {
+    std::shared_ptr<StopFlags> _flags;
+    bool                       _stopping = false;
+
+public:
+    explicit Lingerer(std::shared_ptr<StopFlags> flags)
+        : _flags(std::move(flags)) {}
+    qb::io::async::task<bool>
+    onInit() override {
+        registerEvent<qb::SignalEvent>(*this);
+        registerEvent<Later>(*this);
+        co_return true;
+    }
+    void
+    on(qb::SignalEvent const &) {
+        if (!std::exchange(_stopping, true))
+            push<Later>(id());
+    }
+    void
+    on(Later const &) {
+        _flags->reaped.store(true);
+        kill();
+    }
+};
+
+/// An asker that is not the kit's driver, expecting on a probe that the stop of its engine has already taken. It holds
+/// its core -- a stop raised meanwhile is not read there -- until the probe's core has reaped the probe, then expects
+/// again: the probe is gone, and nothing has told this actor that it is going too.
+class HeldThroughTheStop : public qb::Actor {
+    qb::ActorId                _probe;
+    std::shared_ptr<StopFlags> _flags;
+
+public:
+    HeldThroughTheStop(qb::ActorId probe, std::shared_ptr<StopFlags> flags)
+        : _probe(probe)
+        , _flags(std::move(flags)) {}
+    qb::io::async::task<bool>
+    onInit() override {
+        registerEvent<qb::test::detail::Expectation>(*this);
+        spawn([probe = _probe, flags = _flags](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
+            (void) co_await qb::test::expect<Filled>(ctx, probe, 0s); // a live probe answers
+            flags->holding.store(true);
+            // No scenario leaves it waiting: the bound only keeps a broken one from holding the engine's join for ever.
+            for (const auto give_up = steady::now() + 60s; !flags->reaped.load() && steady::now() < give_up;)
+                std::this_thread::sleep_for(1ms);
+            flags->expected.store(flags->reaped.load());
+            (void) co_await qb::test::expect<Filled>(ctx, probe, 0s);
+        });
+        co_return true;
+    }
+    void
+    on(qb::test::detail::Expectation &e) {
+        (void) resolve_ask(e);
+    }
+};
+
 /// Counts one expectation as sent to `probe`, and ends its core: what an expectation leaves behind that was still in
 /// its asker's pipe when an exception stopped that core -- a count, and nothing that will ever arrive.
 class Doomed : public qb::Actor {
@@ -2077,6 +2144,32 @@ TEST(TestKit, AScenarioWhoseEngineIsStoppedByAnotherActorIsNotToldItsProbesAreGo
     EXPECT_FALSE(run.timed_out) << run.describe();
     EXPECT_FALSE(run.engine_error) << run.describe();
     EXPECT_FALSE(run.error) << run.describe();
+}
+
+TEST(TestKit, AnAskerTheStopOfItsEngineHasNotReachedIsNotToldItsProbeIsGone) {
+    // An engine stops one core at a time. The probe's core has read the stop and reaped the probe; the asker's, held in
+    // a pass that began before, has not. An expectation asked then found no probe and threw -- out of the `spawn` body
+    // of an actor that is not the kit's driver, where nothing catches it: a CRITICAL line on stderr, in a run that
+    // went well. The asker is told nothing until its core has read what the probe's had: it is stopped too, and ends
+    // in silence. The hold is the case's own, begun before the scenario lets the engine stop and ended by the probe's
+    // core: no clock orders the two.
+    const auto        flags = std::make_shared<StopFlags>();
+    qb::test::TestKit kit;
+    const auto        probe = kit.probe<Filled>(1);
+    (void) kit.add<Lingerer>(1, flags);
+    (void) kit.add<HeldThroughTheStop>(2, probe, flags);
+    (void) kit.add<Lingerer>(2, std::make_shared<StopFlags>()); // the asker's core turns a pass more: its frame is resumed, killed
+    testing::internal::CaptureStderr();
+    const auto run = kit.run(
+        [flags](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
+            while (!flags->holding.load())
+                co_await ctx.sleep(1ms); // the asker's core is held: the stop that follows this scenario is not read there
+        },
+        30s);
+    const std::string printed = testing::internal::GetCapturedStderr();
+    EXPECT_TRUE(run) << run.describe();
+    EXPECT_TRUE(flags->expected.load()) << "the asker did not expect on a probe that the stop had taken ahead of it: nothing was proved";
+    EXPECT_EQ(printed.find("let an exception escape"), std::string::npos) << "a run that went well printed on stderr: " << printed;
 }
 
 TEST(TestKit, AnExpectationOfAProbeWhoseCoreStoppedOnAnErrorThrowsAtOnce) {
