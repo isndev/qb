@@ -949,7 +949,10 @@ policy.
   told two passes later that its probe had ended "without a word" -- the probe was alive. An expectation is now
   asked in a child of the scope of its context, cancelled too by the asker's own scope and by its watch of the probe
   (`detail::expectation_scope`): the caller's scope ends it with `cancelled_error`, and its waiter is withdrawn from
-  the probe; the asker's kill ends it whatever scope it was asked in, and is told as such. After it resumes, the
+  the probe; the asker's kill ends it whatever scope it was asked in, and is told as such -- while the asker is
+  there to be found: a coroutine that outlives its reaped actor and expects again in such a scope finds no `Asker`
+  at the id, and `std::logic_error` says so (the kit cannot tell an id that held an `Asker` once from one that never
+  did). After it resumes, the
   expectation knows that its asker lives by a copy of the asker's own token, and reads the watch through a state the
   asker shares with it (`detail::watch_state`): nothing reads the actor, which may be gone. Proven by
   `TestKit.AnExpectationEndsWithTheScopeItIsAskedIn` -- the asker cancels its scope once the expectation is sent;
@@ -973,16 +976,17 @@ policy.
   throw `probe_gone_error` -- told two passes later, so an asker that stops with its probe is still told nothing (the
   entry below). That is for an asker that is active: a core holds back what reaches an actor whose `onInit()` has not
   returned, a watch's answer with the rest, and replays it in order once the actor is active -- the order a watch
-  promises -- so an expectation asked while its `Asker` is activating ends with the probe's own answer (a killed
-  probe's included), the asker's kill or the activation deadline, never with the watch, and
-  `AnExpectationAskedInAnOnInitIsNotEndedByTheWatchOfItsProbe` pins it (the review that followed found the claim
-  stated without that limit). The kit's driver is an `Asker`; an actor of a test that expects itself derives from it
-  instead of `qb::Actor`, and `expect` / `expect_none` from any other actor throw `std::logic_error` where they are
-  called, nothing sent. For a test written against the kit as it was: an asker that registered
-  `qb::test::detail::Expectation` by hand derives from `Asker` and drops the registration and its handler, and one
-  that registers `qb::DownEvent` for itself hands the ones it does not expect to `Asker::on`. Proven by four cases. A
-  probe ended through a handle under a window and an expectation of the scenario: both waited for the watchdog. An
-  asker that is not the driver, on a probe whose core stops:
+  promises -- so while an `Asker` is activating the watch ends none of its expectations: the answer is replayed when
+  the `onInit()` returns, and ends then one still waiting, which a coroutine spawned there asked; the `onInit()`'s own
+  ends with the probe's own answer (a killed probe's included), the asker's kill or the activation deadline, and
+  `AnExpectationAskedInAnOnInitIsNotEndedByTheWatchOfItsProbe` pins it (the reviews that followed found the claim
+  stated without that limit, then the limit stated too wide). The kit's driver is an `Asker`; an actor of a test that
+  expects itself derives from it instead of `qb::Actor`, and `expect` / `expect_none` from any other actor throw
+  `std::logic_error` where they are called, nothing sent. For a test written against the kit as it was: an asker that
+  registered `qb::test::detail::Expectation` by hand derives from `Asker` and drops the registration and its handler,
+  and one that registers `qb::DownEvent` for itself hands the ones it does not expect to `Asker::on`. Proven by four
+  cases. A probe ended through a handle under a window and an expectation of the scenario: both waited for the
+  watchdog. An asker that is not the driver, on a probe whose core stops:
   `AnExpectationOfAnotherActorOnAProbeWhoseCoreStopsGetsNoVerdict` pinned that it waited, it is told now, and the case
   is `AnAskerThatIsNotTheDriverIsToldWhenItsProbesCoreStops`. An asker that outlives the stop of its engine. And an
   actor that is no `Asker`, refused by both calls. (A fifth, an `onInit()` that expects on a probe of its own core
@@ -998,22 +1002,23 @@ policy.
 
 - **An asker that the stop of its engine has not reached is no longer told that its probe is gone (Huly QB-57).** An
   engine stops one core at a time. A probe's core could have read the stop and reaped the probe while an asker on
-  another core, in a pass that began before, had not: an expectation asked then found no probe in the census and
-  threw `probe_gone_error` at once. Out of the `spawn` body of an actor that is not the kit's driver nothing catches
-  it, and the core reports it: a `CRITICAL` line on stderr in a run that had gone well, for a probe that had only
-  stopped a pass ahead of its asker. A probe found gone is now told two passes of the asker's core later
-  (`detail::gone`, on a request deadline: a pass of the core, never a pump of its loop) and only to an asker that is
-  still there. A stop is a signal, and a core hands a signal to its actors in the receive of the pass that reads it:
-  two passes after the probe was found gone, a stop that took the probe has reached the asker, which is cancelled
-  like any actor that stops -- `cancelled_error`, which a `spawn` body ends on in silence. An asker that is not
-  stopped is told the probe is gone, as before, with no window waited -- one that ignores the stop, and one that
-  handles it and ends a pass or more later (`AnAskerThatHandlesTheStopAndEndsLaterIsToldItsProbeIsGone`): such an
-  asker catches the error, or its `spawn` body prints it. The same holds for an expectation that a core's
-  stop ends under a scenario. Proven by `TestKit.AnAskerTheStopOfItsEngineHasNotReachedIsNotToldItsProbeIsGone`: an
-  asker holds its core from before the scenario lets the engine stop until the probe's core has reaped the probe,
-  then expects, and the case reads stderr -- the line was printed in 6 runs of 6 on the kit as it was, in none of 10
-  after. Three mutants are caught: the telling at once, one pass instead of two, and an asker told although it is
-  cancelled.
+  another core, in a pass that began before, had not: an expectation asked then found no probe in the census and threw
+  `probe_gone_error` at once. Out of the `spawn` body of an actor that is not the kit's driver nothing catches it, and
+  the core reports it: a `CRITICAL` line on stderr in a run that had gone well, for a probe that had only stopped a
+  pass ahead of its asker. A probe found gone is now told two passes of the asker's core later (`detail::gone`, on a
+  request deadline: a pass of the core, never a pump of its loop) and only to an asker that is still there. A stop is
+  a signal, and a core hands a signal to its actors in the receive of the pass that reads it: two passes after the
+  probe was found gone, a stop that took the probe has reached the asker, which is cancelled like any actor that stops
+  -- `cancelled_error`, which a `spawn` body ends on in silence. An asker that is not stopped is told the probe is
+  gone, as before, with no window waited -- one still there when those passes are over (three when the watch answered:
+  the cancelled expectation resumes a pass later), because it ignores the stop or handles it and ends later
+  (`AnAskerThatHandlesTheStopAndEndsLaterIsToldItsProbeIsGone`): such an asker catches the error, or its `spawn` body
+  prints it. One that ends within those passes is cancelled; the last actor of its core is not resumed at all. No
+  count of passes from the stop is promised. The same holds for an expectation that a core's stop ends under a
+  scenario. Proven by `TestKit.AnAskerTheStopOfItsEngineHasNotReachedIsNotToldItsProbeIsGone`: an asker holds its core
+  from before the scenario lets the engine stop until the probe's core has reaped the probe, then expects, and the
+  case reads stderr -- the line was printed in 6 runs of 6 on the kit as it was, in none of 10 after. Three mutants
+  are caught: the telling at once, one pass instead of two, and an asker told although it is cancelled.
 
 - **Two cases of the test kit are ordered by events, and no longer fail on a kit that is right (Huly QB-57).**
   `TestKit.AnEventThatReachedTheProbesCoreBeforeItsDeadlineIsNotAnsweredAsNone` armed two windows of 300 ms and

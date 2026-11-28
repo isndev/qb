@@ -418,7 +418,8 @@ inline constexpr char const *probe_ended_unheard =
     "qb::test: the probe ended while this expectation waited on it, and said nothing -- kill() called on it, or the stop of its engine";
 /// `std::logic_error::what()` of an expectation asked by an actor that is no `Asker`.
 inline constexpr char const *no_asker =
-    "qb::test: this actor is no qb::test::Asker -- only an Asker hears a probe's answer; derive the actor from it";
+    "qb::test: no qb::test::Asker lives at this id -- the actor is no Asker (only an Asker hears a probe's answer: derive "
+    "it from qb::test::Asker), or it is gone and the scope given is not its actor's";
 
 /// What an `Asker` knows of a probe it watches, shared with the expectations it asks of that probe: they read it after
 /// they resume, when the actor may be gone.
@@ -446,11 +447,13 @@ class expectation_scope;
  *            then throw `probe_gone_error`. No expectation of an active `Asker` outlives its probe.
  *          - The limit of that watch is its core's: a core holds back what reaches an actor whose `onInit()` has not
  *            returned -- a watch's answer with the rest -- and replays it, in order, once the actor is active (the
- *            order a watch promises: behind all that the watched actor's core had sent). An expectation asked while
- *            its `Asker` is activating -- in its `onInit()`, or in a coroutine it spawned there -- is therefore not
- *            ended by the watch: by the probe's own answer, a `qb::KillEvent`'s included (an answer to an ask passes
- *            the hold), by the asker's kill, or by its core's activation deadline. With that deadline off
- *            (`activation_deadline_ns = 0`), a probe that ends without a word leaves it waiting until the engine stops.
+ *            order a watch promises: behind all that the watched actor's core had sent). While its `Asker` is
+ *            activating, therefore, no expectation of it is ended by the watch: the answer is replayed when the
+ *            `onInit()` returns, and ends then an expectation still waiting (one that a coroutine spawned in the
+ *            `onInit()` asked). The `onInit()`'s own expectation cannot outlive the `onInit()`: it ends by the
+ *            probe's own answer, a `qb::KillEvent`'s included (an answer to an ask passes the hold), by the asker's
+ *            kill, or by its core's activation deadline. With that deadline off (`activation_deadline_ns = 0`), a
+ *            probe that ends without a word leaves it waiting until the engine stops.
  *          An expectation ends, too, with the scope of the context it is asked in -- the actor's, or one it made for a
  *          part of its work (`child_token()`) and cancels: `cancelled_error`, and its waiter is withdrawn from the
  *          probe -- and with the asker's kill, whatever scope that context carries (`detail::expectation_scope`).
@@ -526,7 +529,8 @@ namespace detail {
  *          with `child_token()` and cancels. The asker's own scope -- the actor's, cancelled when it is killed --
  *          ends it whatever scope the caller gave, and it is also what tells, after the expectation resumes, that the
  *          asker lives: `expect` holds a copy of that token, and reads the watch through the state the asker shares
- *          with it, so nothing reads the actor, which may be gone by then.
+ *          with it, so nothing reads the actor, which may be gone by then. It costs one allocation an expectation:
+ *          the child token of the caller's scope.
  */
 class expectation_scope {
 public:
@@ -822,9 +826,12 @@ private:
  *          probe that had only stopped a pass ahead of it -- out of a `spawn` body, a line on stderr in a run that had
  *          gone well. A stop is a signal, and a core that reads one hands it to its actors in the receive of that
  *          very pass: two passes of the asker's core after the probe was found gone, a stop that took the probe has
- *          reached the asker. One that ends on it is cancelled then, and that is what it is told. An asker still there
- *          -- one that ignores the stop, or handles it and ends a pass or more later -- is told the probe is gone, and
- *          out of a `spawn` body that error is printed: such an asker catches it.
+ *          reached the asker. These passes are counted from the census's refusal; from the watch's answer it is one
+ *          more, the cancelled ask resuming a pass later. An asker that ends within them -- one that ends on the stop
+ *          -- is cancelled, and that is what it is told; the last actor of its core is not resumed at all, its core
+ *          stopping with it. An asker still there when they are over -- one that ignores the stop, or handles it and
+ *          ends later -- is told the probe is gone, and out of a `spawn` body that error is printed: an asker that
+ *          handles the stop catches it. No count of passes from the stop is promised.
  * @param own The asker's own scope (`expectation_scope::own`): it tells whether the asker lives, whatever `ctx` is.
  * @return The error to throw.
  * @throws qb::io::async::cancelled_error when the asker ended meanwhile, or the scope of `ctx` did.
@@ -1194,8 +1201,11 @@ public:
  *        recorded. The asker times nothing: it waits for the probe's answer, however late a stalled host delivers it.
  * @return The event, a copy; empty when none reached the probe in time.
  * @throws std::logic_error when the probe does not record `E` -- a test written against the wrong probe -- and, where
- *         it is called, nothing sent, when the asking actor is no `Asker`: it would never hear the answer, and nothing
- *         else ends an expectation.
+ *         it is called, nothing sent, when no `Asker` lives at the id of @p ctx: the actor is no `Asker` -- it would
+ *         never hear the answer, and nothing else ends an expectation -- or it was one and is gone, reaped, and @p ctx
+ *         carries a scope that is not its actor's (the actor's would have said so: `cancelled_error`). A coroutine
+ *         that outlives its actor and expects again in such a scope meets this: the kit cannot tell an id that held
+ *         an `Asker` once from one that never did.
  * @throws qb::test::probe_gone_error with nothing sent, when no live probe holds @p probe (it ended, or the id never
  *         was a probe's); and when the probe ends while the expectation waits on it or is on its way -- a
  *         `qb::KillEvent` (the probe says so), `kill()` called on it, its core stopping on an error (the asker's watch of
@@ -1203,7 +1213,8 @@ public:
  *         stop of the engine that took the probe has reached the asker, which is cancelled instead.
  * @throws qb::io::async::cancelled_error when the asking actor is killed, before or meanwhile -- by a stop of its
  *         engine too, for an asker that ends on the stop: a run that ends well prints nothing for an expectation such
- *         an asker asks as it stops (one that ends later is told the probe is gone, see `detail::gone`) -- and
+ *         an asker asks as it stops (one still there two passes later -- three, from a watch's answer -- is told the
+ *         probe is gone, see `detail::gone`) -- and
  *         when the scope of @p ctx is cancelled meanwhile: an expectation ends with the scope it is asked in, as a
  *         `sleep` does, and its waiter is withdrawn from the probe. The asker's kill ends it whatever scope @p ctx
  *         carries, and is told as such.
