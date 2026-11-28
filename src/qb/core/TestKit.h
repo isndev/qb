@@ -747,12 +747,26 @@ public:
 namespace detail {
 /// The event types no probe records, refused where the probe's type is named. The kit's own exchange, and the probe's
 /// other messages -- its deadline reminder, an acknowledgement, a withdrawal: its handlers of them are not templates and
-/// take every one, so a probe of one of them would record nothing. And `qb::SignalEvent`: a probe registers a handler
-/// for each type it records, and that one would replace the handler that ends an actor when its engine stops -- the
-/// probe would record the stop and stay, and no join of its engine, `TestKit::run()`'s included, would ever return.
+/// take every one, so a probe of one of them would record nothing. And the engine's default events but `qb::KillEvent`
+/// (`qb::default_events_t`): a probe registers a handler for each type it records, and that one would replace the
+/// handler every actor has -- a probe of `qb::SignalEvent` would record the stop of its engine and stay, and no join of
+/// that engine, `TestKit::run()`'s included, would ever return; one of `qb::PingEvent` would answer no `qb::ping`, one of
+/// `qb::RequireEvent` no discovery. A probe records `qb::KillEvent` on purpose, and ends with its engine then.
 template <typename E>
 concept never_recorded = std::is_same_v<E, Expectation> || std::is_same_v<E, ExpectationDeadline> || std::is_same_v<E, ExpectationTaken>
-                         || std::is_same_v<E, ExpectationWithdrawn> || std::is_same_v<E, qb::SignalEvent>;
+                         || std::is_same_v<E, ExpectationWithdrawn> || (qb::is_default_event<E> && !std::is_same_v<E, qb::KillEvent>);
+
+/// Whether no two of `Events` are one type.
+template <typename... Events>
+inline constexpr bool distinct = true;
+template <typename First, typename... Rest>
+inline constexpr bool distinct<First, Rest...> = (!std::is_same_v<First, Rest> && ...) && distinct<Rest...>;
+
+/// What a `TestProbe<Events...>` may record: event types as they are -- no `const`, no reference: a qualified spelling
+/// is no event a probe receives, and slipped past `never_recorded` -- none that it refuses, each named once (a type named
+/// twice was recorded into one of its queues and expected from the other).
+template <typename... Events>
+concept recordable = (std::is_same_v<Events, std::remove_cvref_t<Events>> && ...) && (!never_recorded<Events> && ...) && distinct<Events...>;
 
 /**
  * @brief A pass of the calling core: `co_await asker_pass{}` resumes in the turn of the loop of a later pass -- the
@@ -828,12 +842,13 @@ gone(qb::io::async::cancellation_token own, qb::ScopedCoroContext ctx, char cons
 /**
  * @brief An actor that records every event of the announced types it receives, and answers the
  *        `expect` / `expect_none` of a scenario.
- * @tparam Events The event types to record: each derives from `qb::Event` and is copy-constructible
- *         (the probe keeps a copy; its source -- `getSource()` -- is the sender). Not `qb::SignalEvent` -- a probe
- *         that recorded it would no longer stop with its engine -- nor one of the kit's own messages (`detail::`
- *         `Expectation`, `ExpectationDeadline`, `ExpectationTaken`, `ExpectationWithdrawn`), which the probe's own
- *         handlers take: a `TestProbe` of any of them is no type (`detail::never_recorded`), and `TestKit::probe`
- *         refuses it.
+ * @tparam Events The event types to record, each named once and unqualified: each derives from `qb::Event` and is
+ *         copy-constructible (the probe keeps a copy; its source -- `getSource()` -- is the sender). Not an engine's
+ *         default event but `qb::KillEvent` -- a probe of `qb::SignalEvent` would no longer stop with its engine, one of
+ *         `qb::PingEvent` would answer no ping -- nor one of the kit's own messages (`detail::Expectation`,
+ *         `ExpectationDeadline`, `ExpectationTaken`, `ExpectationWithdrawn`), which the probe's own handlers take: a
+ *         `TestProbe` of any of them, of a type named twice or of a `const` or reference type is no type
+ *         (`detail::recordable`), and `TestKit::probe` refuses it.
  * @details Each type has its own queue, in arrival order, and an `expect<E>` consumes the oldest `E`.
  *          An expectation that finds nothing waits, on the probe, until an `E` arrives (the oldest
  *          waiter is served first) or its deadline passes. `expect_none<E>` consumes nothing: it is
@@ -872,7 +887,7 @@ gone(qb::io::async::cancellation_token own, qb::ScopedCoroContext ctx, char cons
  *          unbounded -- a probe is for tests, not for traffic.
  */
 template <typename... Events>
-requires(!detail::never_recorded<Events> && ...)
+requires detail::recordable<Events...>
 class TestProbe final : public qb::Actor {
     static_assert(sizeof...(Events) > 0, "qb::test::TestProbe: name at least one event type to record");
     static_assert((std::is_base_of_v<qb::Event, Events> && ...), "qb::test::TestProbe: every recorded type derives from qb::Event");
@@ -1329,7 +1344,7 @@ namespace detail {
 template <typename A>
 inline constexpr bool is_probe = false;
 template <typename... Events>
-requires(!never_recorded<Events> && ...)
+requires recordable<Events...>
 inline constexpr bool is_probe<TestProbe<Events...>> = true;
 } // namespace detail
 
@@ -1395,7 +1410,7 @@ public:
 
     /// A `TestProbe<Events...>` on @p core: its id is the destination to hand to the actors under test.
     template <typename... Events>
-    requires(!detail::never_recorded<Events> && ...)
+    requires detail::recordable<Events...>
     qb::ActorId
     probe(qb::CoreId core = 0) {
         return add<TestProbe<Events...>>(core);

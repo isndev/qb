@@ -1055,7 +1055,12 @@ policy.
   Witnessed at namespace scope in the kit's test file: `static_assert(!a_probe_records<qb::SignalEvent>)` and one
   per message, beside the engine's events a probe may record (`qb::DownEvent`, `qb::KillEvent`). That file did not
   compile against the kit as it was (three assertions, then three more for the messages), and each refusal taken
-  out again is a build that fails on its assertion.
+  out again is a build that fails on its assertion. The review after that found three more ways through, closed the
+  same way (`detail::recordable`): the engine's other default events but `qb::KillEvent` -- a probe of
+  `qb::PingEvent` answered no `qb::ping`, by the mechanism that made `qb::SignalEvent` hang; a type named twice --
+  `TestProbe<Filled, Filled>` recorded into one queue and was expected from the other, and a fill sent was never
+  yielded; and a `const` or reference spelling, which passed the refusal of the type it spells. Nine more
+  assertions, red on the kit before them.
 
 - **A `qb::test::TestKit` whose engine refused to start no longer holds its probes' ids once its run is over (Huly
   QB-57).** A kit announces a probe to the census as it adds it, and a core that refuses to start -- an actor whose

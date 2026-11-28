@@ -86,6 +86,19 @@ static_assert(!a_probe_records<qb::test::detail::Expectation>, "the kit's own ex
 static_assert(!a_probe_records<qb::test::detail::ExpectationDeadline>, "the probe's reminder of a deadline is not a recorded type");
 static_assert(!a_probe_records<qb::test::detail::ExpectationTaken>, "an acknowledgement of a loan is not a recorded type");
 static_assert(!a_probe_records<qb::test::detail::ExpectationWithdrawn>, "a withdrawal is not a recorded type");
+// The engine's other default events: a probe's handler of one would take the place of the one every actor has -- a probe
+// of `qb::PingEvent` answered no `qb::ping`. `qb::KillEvent` is the one the kit records on purpose.
+static_assert(!a_probe_records<qb::PingEvent>, "a probe that records qb::PingEvent answers no ping");
+static_assert(!a_probe_records<qb::RequireEvent>, "a probe that records qb::RequireEvent answers no discovery");
+static_assert(!a_probe_records<qb::UnregisterCallbackEvent>, "an engine's default event is not a recorded type");
+// A type named twice was recorded into one of its queues and expected from the other: a fill sent was never yielded.
+static_assert(!a_probe_records<Filled, Filled>, "a type is named once");
+static_assert(!a_probe_records<Filled, Cancelled, Filled>);
+// A cv-qualified spelling of a refused type passed the refusal, and a cv-qualified type is no event a probe can record.
+static_assert(!a_probe_records<const qb::SignalEvent>, "a refused type is refused however it is spelled");
+static_assert(!a_probe_records<const qb::test::detail::ExpectationTaken>);
+static_assert(!a_probe_records<const Filled>, "a recorded type is an event type, not a qualified one");
+static_assert(!a_probe_records<Filled &>);
 
 /// The actor under test: fills every order, to the destination it was given.
 class Desk : public qb::Actor {
