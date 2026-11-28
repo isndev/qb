@@ -961,35 +961,40 @@ policy.
   caller's scope read as the watch. Found by the review of the six entries below (round 10).
 
 - **No expectation outlives its probe, and an actor that cannot hear an answer is refused where it expects:
-  `qb::test::Asker` (Huly QB-57).** An expectation sets no deadline, so whatever can leave one waiting for ever has
-  to be closed where it starts. Three ways were left. A probe ended by `kill()` called on it through a handle runs
-  none of its handlers and tells nobody, and the kit's driver acted on its watch of a probe only when a core had
-  stopped: the scenario waited for the watchdog. An asker that was not the kit's driver watched nothing: on a probe
-  whose core stopped on an error, or one stopped with an engine whose signal that asker ignored, it waited for as
-  long as it lived. And an actor that never registered the kit's exchange never heard an answer at all -- a dead
-  letter on its core -- where the asker's own clock once came back empty after the window. `qb::test::Asker` (new)
-  is the actor that expects: it registers and routes the exchange, and it watches every probe it expects on. A watch
-  is answered whatever ended the probe, behind all that its core had sent, and the expectations of that asker on
-  that probe then throw `probe_gone_error` -- told two passes later, so an asker that stops with its probe is still
-  told nothing (the entry below). The kit's driver is an `Asker`; an actor of a test that expects itself derives
-  from it instead of `qb::Actor`, and `expect` / `expect_none` from any other actor throw `std::logic_error` where
-  they are called, nothing sent. For a test written against the kit as it was: an asker that registered
+  `qb::test::Asker` (Huly QB-57).** An expectation sets no deadline, so whatever can leave one waiting for ever has to
+  be closed where it starts. Three ways were left. A probe ended by `kill()` called on it through a handle runs none
+  of its handlers and tells nobody, and the kit's driver acted on its watch of a probe only when a core had stopped:
+  the scenario waited for the watchdog. An asker that was not the kit's driver watched nothing: on a probe whose core
+  stopped on an error, or one stopped with an engine whose signal that asker ignored, it waited for as long as it
+  lived. And an actor that never registered the kit's exchange never heard an answer at all -- a dead letter on its
+  core -- where the asker's own clock once came back empty after the window. `qb::test::Asker` (new) is the actor that
+  expects: it registers and routes the exchange, and it watches every probe it expects on. A watch is answered
+  whatever ended the probe, behind all that its core had sent, and the expectations of that asker on that probe then
+  throw `probe_gone_error` -- told two passes later, so an asker that stops with its probe is still told nothing (the
+  entry below). That is for an asker that is active: a core holds back what reaches an actor whose `onInit()` has not
+  returned, a watch's answer with the rest, and replays it in order once the actor is active -- the order a watch
+  promises -- so an expectation asked while its `Asker` is activating ends with the probe's own answer (a killed
+  probe's included), the asker's kill or the activation deadline, never with the watch, and
+  `AnExpectationAskedInAnOnInitIsNotEndedByTheWatchOfItsProbe` pins it (the review that followed found the claim
+  stated without that limit). The kit's driver is an `Asker`; an actor of a test that expects itself derives from it
+  instead of `qb::Actor`, and `expect` / `expect_none` from any other actor throw `std::logic_error` where they are
+  called, nothing sent. For a test written against the kit as it was: an asker that registered
   `qb::test::detail::Expectation` by hand derives from `Asker` and drops the registration and its handler, and one
-  that registers `qb::DownEvent` for itself hands the ones it does not expect to `Asker::on`. Proven by five cases.
-  A probe ended through a handle under a window and an expectation of the scenario: both waited for the watchdog.
-  An asker that is not the driver, on a probe whose core stops:
-  `AnExpectationOfAnotherActorOnAProbeWhoseCoreStopsGetsNoVerdict` pinned that it waited, it is told now, and the
-  case is `AnAskerThatIsNotTheDriverIsToldWhenItsProbesCoreStops`. An asker that outlives the stop of its engine.
-  An actor that is no `Asker`, refused by both calls. And an `onInit()` that expects on a probe of its own core,
-  added after it. Six mutants are caught: an expectation that only a core's stop ends, a watch that only the
-  driver holds, each of the two ends read as the other, a stranger left to expect, and an asker known by its id
-  alone; the forty-three of the asker's fix and the ten of the two beside it are caught again on this header,
-  fourteen of them re-pointed at the code that moved into `Asker`. Two of those were caught again only once their
-  cases read WHO told the expectation, since the watch now gives the same verdict by another way: a census that
-  refuses nothing (the expectation is sent, and the watch of a probe that is gone answers it -- the cases read that
-  the census refused it, nothing sent), and an expectation of an asker being killed that is not told it is
-  cancelled (its actor is gone when its coroutine resumes, and so is its seat: it was told it is no `Asker` -- the
-  case reads what it threw).
+  that registers `qb::DownEvent` for itself hands the ones it does not expect to `Asker::on`. Proven by four cases. A
+  probe ended through a handle under a window and an expectation of the scenario: both waited for the watchdog. An
+  asker that is not the driver, on a probe whose core stops:
+  `AnExpectationOfAnotherActorOnAProbeWhoseCoreStopsGetsNoVerdict` pinned that it waited, it is told now, and the case
+  is `AnAskerThatIsNotTheDriverIsToldWhenItsProbesCoreStops`. An asker that outlives the stop of its engine. And an
+  actor that is no `Asker`, refused by both calls. (A fifth, an `onInit()` that expects on a probe of its own core
+  added after it, could not fail -- the watch's answer it was meant to rule out is held back until the `onInit()`
+  returns -- and is gone.) Six mutants are caught: an expectation that only a core's stop ends, a watch that only the
+  driver holds, each of the two ends read as the other, a stranger left to expect, and an asker known by its id alone;
+  the forty-three of the asker's fix and the ten of the two beside it are caught again on this header, fourteen of
+  them re-pointed at the code that moved into `Asker`. Two of those were caught again only once their cases read WHO
+  told the expectation, since the watch now gives the same verdict by another way: a census that refuses nothing (the
+  expectation is sent, and the watch of a probe that is gone answers it -- the cases read that the census refused it,
+  nothing sent), and an expectation of an asker being killed that is not told it is cancelled (its actor is gone when
+  its coroutine resumes, and so is its seat: it was told it is no `Asker` -- the case reads what it threw).
 
 - **An asker that the stop of its engine has not reached is no longer told that its probe is gone (Huly QB-57).** An
   engine stops one core at a time. A probe's core could have read the stop and reaped the probe while an asker on
@@ -1022,17 +1027,17 @@ policy.
   lap again, the second with the loan's expiry put back, and neither fails in 144 runs with the process stopped 300
   to 900 ms at a time.
 
-- **An expectation asked in an `onInit()` ends with its core's activation deadline: stated, and four cases of the
-  kit no longer fail on it (Huly QB-57).** `qb::test::expect` sets no deadline of its own, but a core fails an
-  actor whose `onInit()` has not returned when its activation deadline passes -- five seconds by default, counted from
-  the moment the actor is built: the actor's scope is cancelled, the expectation throws `cancelled_error`, the actor
+- **An expectation asked in an `onInit()` ends with its core's activation deadline: stated, and four cases of the kit
+  no longer fail on it (Huly QB-57).** `qb::test::expect` sets no deadline of its own, but a core fails an actor whose
+  `onInit()` has not returned when its activation deadline passes -- five seconds by default, counted from the first
+  suspension of that `onInit()`: the actor's scope is cancelled, the expectation throws `cancelled_error`, the actor
   is removed. The header and the guide now say so, with the remedy (`qb::VirtualCore::activation_deadline_ns`, or a
-  spawned coroutine), and `TestKit.AnExpectationAskedInAnOnInitEndsAtItsCoresActivationDeadline` pins it: a
-  deadline of 200 ms, a window of an hour on a quiet probe, and the actor's death heard. Four cases of the kit's own
-  suite expect from an `onInit()` and ran under those five seconds: with the process stopped once for 5.2 to 5.6 s,
-  20 to 80 ms after its launch, they failed 6, 12, 12 and 12 runs in 12 on a kit that was right (and the case of the
-  entry below, 12 in 12). They now run under an activation deadline of ten minutes -- longer than any stall they
-  have to outlast, still an end for a case that is broken: none failed in 12 under the same stop.
+  spawned coroutine), and `TestKit.AnExpectationAskedInAnOnInitEndsAtItsCoresActivationDeadline` pins it: a deadline
+  of 200 ms, a window of an hour on a quiet probe, and the actor's death heard. Four cases of the kit's own suite
+  expect from an `onInit()` and ran under those five seconds: with the process stopped once for 5.2 to 5.6 s, 20 to 80
+  ms after its launch, they failed 6, 12, 12 and 12 runs in 12 on a kit that was right (and the case of the entry
+  below, 12 in 12). They now run under an activation deadline of ten minutes -- longer than any stall they have to
+  outlast, still an end for a case that is broken: none failed in 12 under the same stop.
 
 - **`qb::test::TestProbe<qb::SignalEvent>` is refused at compile time (Huly QB-57).** A probe registers a handler for
   each type it records, and for `qb::SignalEvent` that handler took the place of the one that ends an actor when its

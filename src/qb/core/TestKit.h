@@ -22,7 +22,7 @@
  *   deadline of its own, and takes the probe's answer however late a stalled host delivers it.
  * - `Asker` is the actor that expects: the kit's driver is one, and an actor of a test that calls
  *   `expect` itself derives from it. It hears the probes' answers, and it watches the probes it
- *   expects on, so that no expectation outlives its probe.
+ *   expects on, so that no expectation of an asker that is active outlives its probe.
  *
  * It is not a deterministic scheduler: the engine runs for real, on its own threads, and a test
  * asserts on what arrives within a deadline, never on interleavings. It depends on no test framework:
@@ -443,7 +443,14 @@ class expectation_scope;
  *            the probe's core. A probe can end without a word -- `kill()` called on it through a handle, a core that
  *            stops on an exception out of a handler -- and a watch is answered whatever ended it, behind everything
  *            its core had sent: the expectations of this actor that wait on that probe, or are on their way to it,
- *            then throw `probe_gone_error`. No expectation of an `Asker` outlives its probe.
+ *            then throw `probe_gone_error`. No expectation of an active `Asker` outlives its probe.
+ *          - The limit of that watch is its core's: a core holds back what reaches an actor whose `onInit()` has not
+ *            returned -- a watch's answer with the rest -- and replays it, in order, once the actor is active (the
+ *            order a watch promises: behind all that the watched actor's core had sent). An expectation asked while
+ *            its `Asker` is activating -- in its `onInit()`, or in a coroutine it spawned there -- is therefore not
+ *            ended by the watch: by the probe's own answer, a `qb::KillEvent`'s included (an answer to an ask passes
+ *            the hold), by the asker's kill, or by its core's activation deadline. With that deadline off
+ *            (`activation_deadline_ns = 0`), a probe that ends without a word leaves it waiting until the engine stops.
  *          An expectation ends, too, with the scope of the context it is asked in -- the actor's, or one it made for a
  *          part of its work (`child_token()`) and cancels: `cancelled_error`, and its waiter is withdrawn from the
  *          probe -- and with the asker's kill, whatever scope that context carries (`detail::expectation_scope`).
@@ -465,7 +472,8 @@ class Asker : public qb::Actor {
     /// probe that a kit announced and its core has not built yet -- an `onInit()` that runs while another core still
     /// builds its actors -- is watched like any other: the watch waits in that pipe with the expectation, and a core
     /// builds every actor it was given before it turns its first pass. (On the asker's own core the probe exists
-    /// already: a core builds all its actors, then runs their `onInit()`.)
+    /// already: a core builds all its actors, then runs their `onInit()`.) The answer reaches the asker only once it
+    /// is active, as everything else does: see the class.
     [[nodiscard]] std::shared_ptr<detail::watch_state>
     watching(qb::ActorId probe) {
         auto it = std::find_if(_watched.begin(), _watched.end(), [probe](watched const &w) { return w.probe == probe; });
@@ -846,8 +854,9 @@ gone(qb::io::async::cancellation_token own, qb::ScopedCoroContext ctx, char cons
  *          nothing sent), answers the ones waiting, and keeps it up until each one already sent has arrived and been
  *          answered the same, or its asker is gone. A probe that ends otherwise says nothing itself: stopped with
  *          its engine, its askers stop with it; on a core that stops on an error -- an exception out of a handler --
- *          it can send nothing; `kill()` called on it through a handle skips the handler. Its askers hear all three:
- *          an `Asker` watches the probes it expects on, and a watch is answered whatever ended the probe, behind all
+ *          it can send nothing; `kill()` called on it through a handle skips the handler. Its askers hear all three,
+ *          once they are active: an `Asker` watches the probes it expects on, and a watch is answered whatever ended
+ *          the probe, behind all
  *          that its core sent. The expectations of that asker waiting on the probe, or on their way to it, then throw
  *          `probe_gone_error`, and so does the next `expect` -- two passes of the asker's core later, and only when
  *          the asker is still there: an engine that stops takes a probe a pass or two ahead of an asker on another
@@ -1188,10 +1197,11 @@ public:
  *       be built yet: the census does not know it, and `expect` throws. And an expectation asked there is bounded by
  *       the asker's core, not by the kit: a core fails an actor whose `onInit()` has not returned when its activation
  *       deadline passes (`qb::VirtualCore::activation_deadline_ns`: five seconds unless set before the engine starts,
- *       counted from the moment the actor is built). The actor's scope is cancelled, the expectation throws
+ *       counted from the first suspension of that `onInit()`). The actor's scope is cancelled, the expectation throws
  *       `cancelled_error`, and the actor is removed: a window or a timeout longer than what is left of those seconds
- *       never gets its answer, and a host that stalls through them ends one that would have got it. Raise the
- *       deadline, or expect from a spawned coroutine.
+ *       never gets its answer, and a host that stalls through them ends one that would have got it. Nor does the
+ *       asker's watch end it there: a probe that ends without a word leaves it to that deadline (see `Asker`). Raise
+ *       the deadline, or expect from a spawned coroutine of an actor that is active.
  */
 template <typename E>
 [[nodiscard]] qb::io::async::task<std::optional<E>>

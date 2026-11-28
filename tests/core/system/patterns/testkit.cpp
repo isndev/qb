@@ -942,26 +942,50 @@ public:
     }
 };
 
-/// An `Early` on the core of its own probe, added BEFORE it: where the probe will be is told through `where`, filled
-/// once the kit has added both.
-struct Whereabouts {
-    qb::ActorId probe;
-    qb::ActorId told;
-};
-
-class EarlyBesideItsProbe : public qb::test::Asker {
-    std::shared_ptr<Whereabouts> _where;
+/// An asker whose `onInit()` waits a window of an hour on `probe`, tells `sent` once that expectation has left, and
+/// tells `told` its verdict if one ever comes.
+class EarlyAndSent : public qb::test::Asker {
+    qb::ActorId _probe;
+    qb::ActorId _sent;
+    qb::ActorId _told;
 
 public:
-    explicit EarlyBesideItsProbe(std::shared_ptr<Whereabouts> where)
-        : _where(std::move(where)) {}
+    EarlyAndSent(qb::ActorId probe, qb::ActorId sent, qb::ActorId told)
+        : _probe(probe)
+        , _sent(sent)
+        , _told(told) {}
     qb::io::async::task<bool>
     onInit() override {
-        auto       ctx   = context();
-        const auto told  = _where->told;
-        const auto heard = co_await quiet_verdict(ctx, _where->probe, 50ms);
+        auto       ctx         = context();
+        const auto told        = _told;
+        auto [heard, was_sent] = co_await qb::io::async::when_all(quiet_verdict(ctx, _probe, std::chrono::hours(1)), tell_now(ctx, _sent, 1));
+        (void) was_sent;
         ctx.push_to<Cancelled>(told, static_cast<int>(heard));
         co_return true;
+    }
+};
+
+/// Watches the actor a `Mourn` names and tells `report` -- a probe of `Cancelled` -- why it is gone (the
+/// `qb::DownReason`, as an int).
+class ReasonMourner : public qb::Actor {
+    qb::ActorId _report;
+
+public:
+    explicit ReasonMourner(qb::ActorId report)
+        : _report(report) {}
+    qb::io::async::task<bool>
+    onInit() override {
+        registerEvent<Mourn>(*this);
+        registerEvent<qb::DownEvent>(*this);
+        co_return true;
+    }
+    void
+    on(Mourn const &m) {
+        watch(m.who);
+    }
+    void
+    on(qb::DownEvent const &down) {
+        push<Cancelled>(_report, static_cast<int>(down.reason));
     }
 };
 
@@ -1147,8 +1171,9 @@ public:
 };
 
 /// The activation deadline of a case whose actors expect in their `onInit()`. A core fails an actor whose `onInit()`
-/// has not returned when that deadline passes -- five seconds by default, counted from the moment the actor is built --
-/// and an expectation asked there ends with it: a host that stalls for those seconds before the engine has started
+/// has not returned when that deadline passes -- five seconds by default, counted from the first suspension of that
+/// `onInit()`, once its core has built every actor it was given and run the `onInit()`s ahead of it -- and an
+/// expectation asked there ends with it: a host that stalls for those seconds before the engine has started
 /// made such a case fail on a kit that was right. Ten minutes: more than any stall the case has to outlast, and still
 /// an end for a case that is broken.
 struct PatientActivation : qb::test::ScopedDeadline {
@@ -2055,25 +2080,6 @@ TEST(TestKit, AnExpectationSentBeforeItsProbeIsBuiltIsAnswered) {
     EXPECT_TRUE(run) << run.describe();
 }
 
-TEST(TestKit, AnExpectationAskedInAnOnInitOnAProbeOfItsOwnCoreIsAnswered) {
-    // The same on ONE core, the asker added ahead of its probe. A core builds every actor it was given before it runs
-    // the first `onInit()`: the probe exists when the asker expects on it, and the asker's watch of it -- an asker
-    // watches the probes it expects on -- is taken, not answered "unknown".
-    const PatientActivation patient;
-    const auto              where = std::make_shared<Whereabouts>();
-    qb::test::TestKit       kit;
-    (void) kit.add<EarlyBesideItsProbe>(0, where);
-    where->probe   = kit.probe<Filled>(0);
-    where->told    = kit.probe<Cancelled>(0);
-    const auto run = kit.run(
-        [told = where->told](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
-            EXPECT_EQ(co_await next_told(ctx, told), static_cast<int>(verdict::quiet))
-                << "2: a probe of the asker's own core was taken for gone";
-        },
-        30s);
-    EXPECT_TRUE(run) << run.describe();
-}
-
 TEST(TestKit, AnExpectationAskedInAnOnInitEndsAtItsCoresActivationDeadline) {
     // The bound of the case above, and it is the core's, not the kit's: an asker sets no deadline, but a core fails an
     // actor whose `onInit()` has not returned when its activation deadline passes -- five seconds by default, 200 ms
@@ -2096,6 +2102,37 @@ TEST(TestKit, AnExpectationAskedInAnOnInitEndsAtItsCoresActivationDeadline) {
         60s);
     EXPECT_TRUE(run.completed) << run.describe();
     EXPECT_FALSE(run.timed_out) << run.describe();
+}
+
+TEST(TestKit, AnExpectationAskedInAnOnInitIsNotEndedByTheWatchOfItsProbe) {
+    // The limit of an asker's watch, and it is its core's: a core holds back what reaches an actor whose `onInit()`
+    // has not returned, and replays it, in order, once the actor is active -- the answer of a watch among the rest, as
+    // it keeps a watch's promise to come behind all that the watched actor's core had sent. So an expectation an
+    // `onInit()` asks is not ended by its watch: here the probe's core stops on an error under it, and the asker hears
+    // nothing until its core's activation deadline (200 ms) ends its `onInit()` -- `cancelled_error`, an actor removed
+    // as an init that failed. The probe's own answer would have reached it: an answer to an ask passes the hold.
+    const qb::test::ScopedDeadline deadline{std::uint64_t{200} * 1000u * 1000u};
+    qb::test::TestKit              kit;
+    const auto                     probe   = kit.probe<Filled>(1);
+    const auto                     thrower = kit.add<Thrower>(1);
+    const auto                     sent    = kit.probe<Cancelled>(0);
+    const auto                     told    = kit.probe<Cancelled>(0);
+    const auto                     why     = kit.probe<Cancelled>(0);
+    const auto                     mourner = kit.add<ReasonMourner>(0, why);
+    const auto                     early   = kit.add<EarlyAndSent>(2, probe, sent, told);
+    const auto                     run     = kit.run(
+        [thrower, sent, told, why, mourner, early](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
+            ctx.push_to<Mourn>(mourner, early);
+            EXPECT_EQ(co_await next_told(ctx, sent), 1) << "the onInit()'s expectation waits on the probe";
+            ctx.push_to<Boom>(thrower);
+            EXPECT_EQ(co_await next_told(ctx, why), static_cast<int>(qb::DownReason::init_failed))
+                << "the asker was ended by its activation deadline, as an onInit() that did not return";
+            EXPECT_FALSE((co_await qb::test::expect<Cancelled>(ctx, told, 0s)).has_value())
+                << "its window was ended -- by the watch: the hold was lifted; by a verdict: a probe that sent none";
+        },
+        30s);
+    EXPECT_TRUE(run.completed) << run.describe();
+    EXPECT_TRUE(run.engine_error) << "a core stopped on an exception";
 }
 
 TEST(TestKit, AProbeAddedThroughTheEngineIsKnownOnceItIsBuilt) {
