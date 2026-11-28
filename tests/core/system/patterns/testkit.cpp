@@ -81,6 +81,11 @@ static_assert(a_probe_records<Filled, Cancelled, qb::DownEvent, qb::KillEvent>, 
 static_assert(!a_probe_records<qb::SignalEvent>, "a probe that records qb::SignalEvent never stops with its engine");
 static_assert(!a_probe_records<Filled, qb::SignalEvent>);
 static_assert(!a_probe_records<qb::test::detail::Expectation>, "the kit's own exchange is not a recorded type");
+// The probe's own messages to itself and from its askers: its handlers of them are not templates, so they took every
+// one, and a probe of one of them compiled and never recorded anything.
+static_assert(!a_probe_records<qb::test::detail::ExpectationDeadline>, "the probe's reminder of a deadline is not a recorded type");
+static_assert(!a_probe_records<qb::test::detail::ExpectationTaken>, "an acknowledgement of a loan is not a recorded type");
+static_assert(!a_probe_records<qb::test::detail::ExpectationWithdrawn>, "a withdrawal is not a recorded type");
 
 /// The actor under test: fills every order, to the destination it was given.
 class Desk : public qb::Actor {

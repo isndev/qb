@@ -678,12 +678,14 @@ public:
 };
 
 namespace detail {
-/// The event types no probe records, refused where the probe's type is named. The kit's own exchange. And
-/// `qb::SignalEvent`: a probe registers a handler for each type it records, and that one would replace the handler
-/// that ends an actor when its engine stops -- the probe would record the stop and stay, and no join of its engine,
-/// `TestKit::run()`'s included, would ever return.
+/// The event types no probe records, refused where the probe's type is named. The kit's own exchange, and the probe's
+/// other messages -- its deadline reminder, an acknowledgement, a withdrawal: its handlers of them are not templates and
+/// take every one, so a probe of one of them would record nothing. And `qb::SignalEvent`: a probe registers a handler
+/// for each type it records, and that one would replace the handler that ends an actor when its engine stops -- the
+/// probe would record the stop and stay, and no join of its engine, `TestKit::run()`'s included, would ever return.
 template <typename E>
-concept never_recorded = std::is_same_v<E, Expectation> || std::is_same_v<E, qb::SignalEvent>;
+concept never_recorded = std::is_same_v<E, Expectation> || std::is_same_v<E, ExpectationDeadline> || std::is_same_v<E, ExpectationTaken>
+                         || std::is_same_v<E, ExpectationWithdrawn> || std::is_same_v<E, qb::SignalEvent>;
 
 /**
  * @brief One pass of the calling core: `co_await asker_pass{}` resumes in the turn of the loop of the next one.
@@ -755,8 +757,10 @@ gone(qb::ScopedCoroContext ctx, char const *met) {
  *        `expect` / `expect_none` of a scenario.
  * @tparam Events The event types to record: each derives from `qb::Event` and is copy-constructible
  *         (the probe keeps a copy; its source -- `getSource()` -- is the sender). Not `qb::SignalEvent` -- a probe
- *         that recorded it would no longer stop with its engine -- nor the kit's own exchange: a `TestProbe` of
- *         either is no type (`detail::never_recorded`), and `TestKit::probe` refuses it.
+ *         that recorded it would no longer stop with its engine -- nor one of the kit's own messages (`detail::`
+ *         `Expectation`, `ExpectationDeadline`, `ExpectationTaken`, `ExpectationWithdrawn`), which the probe's own
+ *         handlers take: a `TestProbe` of any of them is no type (`detail::never_recorded`), and `TestKit::probe`
+ *         refuses it.
  * @details Each type has its own queue, in arrival order, and an `expect<E>` consumes the oldest `E`.
  *          An expectation that finds nothing waits, on the probe, until an `E` arrives (the oldest
  *          waiter is served first) or its deadline passes. `expect_none<E>` consumes nothing: it is

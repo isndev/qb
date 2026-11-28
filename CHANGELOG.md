@@ -1018,10 +1018,13 @@ policy.
   engine stops: the probe recorded the stop and stayed, and `TestKit::run()` never came back from its join.
   `TestProbe` is now constrained (`detail::never_recorded`): a probe of `qb::SignalEvent` is no type, and
   `TestKit::probe` refuses it where it is called. The kit's own exchange, refused until now by a `static_assert`
-  inside the class -- which no `requires` can see -- is refused the same way. Witnessed at namespace scope in the
-  kit's test file: `static_assert(!a_probe_records<qb::SignalEvent>)`, beside the engine's events a probe may record
-  (`qb::DownEvent`, `qb::KillEvent`). That file did not compile against the kit as it was (three assertions), and
-  each of the two refusals taken out again is a build that fails on its assertion.
+  inside the class -- which no `requires` can see -- is refused the same way, and so are the probe's three other
+  messages (its deadline reminder, an acknowledgement, a withdrawal): its handlers of them are not templates and
+  took every one, so a probe of one of them compiled and never recorded anything (the review that followed).
+  Witnessed at namespace scope in the kit's test file: `static_assert(!a_probe_records<qb::SignalEvent>)` and one
+  per message, beside the engine's events a probe may record (`qb::DownEvent`, `qb::KillEvent`). That file did not
+  compile against the kit as it was (three assertions, then three more for the messages), and each refusal taken
+  out again is a build that fails on its assertion.
 
 - **A `qb::test::TestKit` whose engine refused to start no longer holds its probes' ids once its run is over (Huly
   QB-57).** A kit announces a probe to the census as it adds it, and a core that refuses to start -- an actor whose
