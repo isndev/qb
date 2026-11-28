@@ -591,6 +591,13 @@ inline constexpr char const *probe_ended = "qb::test: the probe was killed while
 /// `probe_gone_error::what()` when the scenario's driver heard the probe's core stop.
 inline constexpr char const *probe_core_stopped = "qb::test: the probe's core stopped on an error while this expectation waited on it";
 
+/// The event types no probe records, refused where the probe's type is named. The kit's own exchange. And
+/// `qb::SignalEvent`: a probe registers a handler for each type it records, and that one would replace the handler
+/// that ends an actor when its engine stops -- the probe would record the stop and stay, and no join of its engine,
+/// `TestKit::run()`'s included, would ever return.
+template <typename E>
+concept never_recorded = std::is_same_v<E, Expectation> || std::is_same_v<E, qb::SignalEvent>;
+
 /// The scope an expectation of `ctx`'s actor on `probe` is asked in: the driver's watch of that probe when the actor
 /// is a kit's driver, its own scope otherwise.
 [[nodiscard]] inline qb::ScopedCoroContext
@@ -604,7 +611,9 @@ asking(qb::ScopedCoroContext const &ctx, qb::ActorId probe) {
  * @brief An actor that records every event of the announced types it receives, and answers the
  *        `expect` / `expect_none` of a scenario.
  * @tparam Events The event types to record: each derives from `qb::Event` and is copy-constructible
- *         (the probe keeps a copy; its source -- `getSource()` -- is the sender).
+ *         (the probe keeps a copy; its source -- `getSource()` -- is the sender). Not `qb::SignalEvent` -- a probe
+ *         that recorded it would no longer stop with its engine -- nor the kit's own exchange: a `TestProbe` of
+ *         either is no type (`detail::never_recorded`), and `TestKit::probe` refuses it.
  * @details Each type has its own queue, in arrival order, and an `expect<E>` consumes the oldest `E`.
  *          An expectation that finds nothing waits, on the probe, until an `E` arrives (the oldest
  *          waiter is served first) or its deadline passes. `expect_none<E>` consumes nothing: it is
@@ -639,11 +648,11 @@ asking(qb::ScopedCoroContext const &ctx, qb::ActorId probe) {
  *          ones it is sent, and ends with the engine. The queues are unbounded -- a probe is for tests, not for traffic.
  */
 template <typename... Events>
+requires(!detail::never_recorded<Events> && ...)
 class TestProbe final : public qb::Actor {
     static_assert(sizeof...(Events) > 0, "qb::test::TestProbe: name at least one event type to record");
     static_assert((std::is_base_of_v<qb::Event, Events> && ...), "qb::test::TestProbe: every recorded type derives from qb::Event");
     static_assert((std::is_copy_constructible_v<Events> && ...), "qb::test::TestProbe: every recorded type is copy-constructible");
-    static_assert((!std::is_same_v<Events, detail::Expectation> && ...), "qb::test::TestProbe: the kit's own exchange is not a recorded type");
 
     struct waiter {
         std::uint64_t ticket;      ///< Matches the deadline reminder
@@ -1051,6 +1060,7 @@ namespace detail {
 template <typename A>
 inline constexpr bool is_probe = false;
 template <typename... Events>
+requires(!never_recorded<Events> && ...)
 inline constexpr bool is_probe<TestProbe<Events...>> = true;
 } // namespace detail
 
@@ -1116,6 +1126,7 @@ public:
 
     /// A `TestProbe<Events...>` on @p core: its id is the destination to hand to the actors under test.
     template <typename... Events>
+    requires(!detail::never_recorded<Events> && ...)
     qb::ActorId
     probe(qb::CoreId core = 0) {
         return add<TestProbe<Events...>>(core);

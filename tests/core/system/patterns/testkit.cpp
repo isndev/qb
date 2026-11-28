@@ -64,6 +64,18 @@ struct Cancelled : qb::Event {
         : qty(q) {}
 };
 
+/// Whether `qb::test::TestProbe<Events...>` is a type: the kit refuses some at compile time.
+template <typename... Events>
+concept a_probe_records = requires { typename qb::test::TestProbe<Events...>; };
+
+static_assert(a_probe_records<Filled>);
+static_assert(a_probe_records<Filled, Cancelled, qb::DownEvent, qb::KillEvent>, "the engine's events a probe may record");
+// A probe that recorded `qb::SignalEvent` registered its own handler in place of the one that ends an actor when its
+// engine stops: it recorded the stop and stayed, and `TestKit::run()` never returned from its join.
+static_assert(!a_probe_records<qb::SignalEvent>, "a probe that records qb::SignalEvent never stops with its engine");
+static_assert(!a_probe_records<Filled, qb::SignalEvent>);
+static_assert(!a_probe_records<qb::test::detail::Expectation>, "the kit's own exchange is not a recorded type");
+
 /// The actor under test: fills every order, to the destination it was given.
 class Desk : public qb::Actor {
     qb::ActorId _report;
