@@ -362,9 +362,30 @@ struct Latch {
 
 struct Hold : qb::Event {};
 
+/// A hold on a latch of its own. `later`: not in the handler that reads it but at the head of the holder's next
+/// receive -- the holder sends it back to itself, and a core reads what it sent itself after its loop has run and
+/// before its mailbox: the coroutines spawned in the pass that read the first one have started, and no pass of the
+/// core ran in between.
+struct HoldOn : qb::Event {
+    std::shared_ptr<Latch> latch;
+    bool                   later = false;
+
+    explicit HoldOn(std::shared_ptr<Latch> l, bool at_the_next_receive = false)
+        : latch(std::move(l))
+        , later(at_the_next_receive) {}
+};
+
 /// Holds its core from a `Hold` until the latch opens: a stall whose end the scenario decides, not a clock.
 class Holder : public qb::Actor {
     std::shared_ptr<Latch> _latch;
+
+    static void
+    hold(Latch &latch) {
+        latch.held.store(true);
+        // No scenario leaves it shut: the bound only keeps a broken one from holding the engine's join for ever.
+        for (const auto give_up = steady::now() + 60s; !latch.open.load() && steady::now() < give_up;)
+            std::this_thread::sleep_for(1ms);
+    }
 
 public:
     explicit Holder(std::shared_ptr<Latch> latch)
@@ -372,14 +393,19 @@ public:
     qb::io::async::task<bool>
     onInit() override {
         registerEvent<Hold>(*this);
+        registerEvent<HoldOn>(*this);
         co_return true;
     }
     void
     on(Hold const &) {
-        _latch->held.store(true);
-        // No scenario leaves it shut: the bound only keeps a broken one from holding the engine's join for ever.
-        for (const auto give_up = steady::now() + 60s; !_latch->open.load() && steady::now() < give_up;)
-            std::this_thread::sleep_for(1ms);
+        hold(*_latch);
+    }
+    void
+    on(HoldOn const &h) {
+        if (h.later)
+            push<HoldOn>(id(), h.latch);
+        else
+            hold(*h.latch);
     }
 };
 
@@ -410,22 +436,20 @@ fill_then_hold(qb::ScopedCoroContext ctx, qb::ActorId probe, qb::ActorId holder)
     co_return;
 }
 
-/// Holds the core of `probe` -- `holder` runs beside it -- once the probe's windows run, sends it a fill that waits in
-/// that core's mailbox -- or, when `desk` is given, an order to the desk beside the probe: the fill is then caused on
-/// that core, once it runs again -- lets the windows end, and opens the latch. Every step follows the one before it by
-/// an event or a flag, the last by a sleep longer than the windows: no stall of either core reorders them.
+/// Holds the core of `probe` -- `holder` runs beside it -- once the probe's windows run, sends an order to the desk
+/// beside the probe -- the fill is then caused on that core, once it runs again -- lets the windows end, and opens the
+/// latch. Every step follows the one before it by an event or a flag, the last by a sleep longer than the windows. A
+/// host that stalls between the answer below and the hold ends the windows first: the case that uses this takes either
+/// account of the fill.
 qb::io::async::task<void>
-fill_a_held_probe_and_release(qb::ScopedCoroContext ctx, qb::ActorId probe, qb::ActorId holder, qb::ActorId local, std::shared_ptr<Latch> latch,
-                              qb::duration windows, qb::ActorId desk = {}) {
+order_from_a_held_core_and_release(qb::ScopedCoroContext ctx, qb::ActorId probe, qb::ActorId holder, qb::ActorId local,
+                                   std::shared_ptr<Latch> latch, qb::duration windows, qb::ActorId desk) {
     (void) co_await qb::test::expect<Filled>(ctx, probe, 0s); // answered: the hold is read a pass later, the windows' timers armed
     ctx.push_to<Hold>(holder);
     while (!latch->held.load())
         co_await ctx.sleep(1ms); // the probe's core is in the hold: what is sent now waits in its mailbox
-    if (desk.is_valid())
-        ctx.push_to<Order>(desk, 7);
-    else
-        ctx.push_to<Filled>(probe, 7);
-    (void) co_await qb::test::expect<Cancelled>(ctx, local, 0s); // a turn of this core: the fill has left it
+    ctx.push_to<Order>(desk, 7);
+    (void) co_await qb::test::expect<Cancelled>(ctx, local, 0s); // a turn of this core: the order has left it
     co_await ctx.sleep(windows + 100ms);                         // the windows have ended, by any clock
     latch->open.store(true);
 }
@@ -461,6 +485,44 @@ a_quiet_window_holds_through_a_stall_of_the_probes_core(qb::CoreId probe_core) {
 qb::io::async::task<void>
 a_turn(qb::ScopedCoroContext ctx, qb::ActorId local) {
     (void) co_await qb::test::expect<Cancelled>(ctx, local, 0s);
+}
+
+/// Waits until the holder is in the hold of `latch`: a flag it sets, read a millisecond at a time.
+qb::io::async::task<void>
+until_held(qb::ScopedCoroContext ctx, std::shared_ptr<Latch> latch) {
+    while (!latch->held.load())
+        co_await ctx.sleep(1ms);
+}
+
+/// Has a fill wait in the mailbox of `probe`'s core while the two windows sent before this branch end, and the
+/// reminders of their deadlines come due -- by the order of that core's passes, and by no clock. `holder` runs beside
+/// the probe and is in the hold of `gate` when this starts: nothing this core sends is read until it opens.
+///  - Behind the two expectations goes a hold `later`: the pass that parks them reads it, and the next one -- its loop
+///    has started the coroutines that time the windows -- holds the core at the head of its receive (`armed`). The
+///    windows run from there, and the core turns no pass: no timer of theirs fires.
+///  - A second hold (`fed`) is sent while the first lasts: the same pass reads it from its mailbox. The fill is sent
+///    while it lasts, behind the batch that pass has taken: it waits for the next.
+///  - The windows end, by any clock, and `fed` opens. The next pass fires both timers, reads their reminders from its
+///    own pipe, and the fill, in its mailbox since before either came due, behind them.
+/// A host that stalls anywhere only lengthens a step: the core never turns a pass in which a window could end before
+/// the fill is in its mailbox.
+qb::io::async::task<void>
+fill_behind_the_reminders(qb::ScopedCoroContext ctx, qb::ActorId probe, qb::ActorId holder, qb::ActorId local, std::shared_ptr<Latch> gate,
+                          qb::duration windows) {
+    const auto armed = std::make_shared<Latch>();
+    const auto fed   = std::make_shared<Latch>();
+    ctx.push_to<HoldOn>(holder, armed, true);
+    co_await a_turn(ctx, local); // the expectations and the hold have left this core
+    gate->open.store(true);
+    co_await until_held(ctx, armed);
+    ctx.push_to<HoldOn>(holder, fed);
+    co_await a_turn(ctx, local);
+    armed->open.store(true);
+    co_await until_held(ctx, fed);
+    ctx.push_to<Filled>(probe, 7);
+    co_await a_turn(ctx, local);
+    co_await ctx.sleep(windows + 100ms);
+    fed->open.store(true);
 }
 
 /// What `told` -- a probe of `Cancelled` -- was told next, or -1.
@@ -1350,6 +1412,9 @@ TEST(TestKit, ALoanOutlastsAStallOfItsAsker) {
     // while that asker still read its answer, and the next expectation was served it too -- one fill, two expectations
     // yielding it. A loan ends by an event only. The probe, the desk and the feeder run on core 1; the feeder holds
     // core 0 -- the asker's -- for 2.5 s, then has the desk fill: the stall is ahead of the answer in core 1's pipe.
+    // The first expectation sets no deadline: the fill is its answer whenever a stalled host lets it be recorded. The
+    // second's four seconds are a wait, not a bound -- long enough to be parked still when a loan of two seconds would
+    // have run out -- and "none" is its answer whenever they end.
     qb::test::TestKit kit;
     const auto        probe   = kit.probe<Filled>(1);
     const auto        desk    = kit.add<Desk>(1, probe);
@@ -1357,10 +1422,10 @@ TEST(TestKit, ALoanOutlastsAStallOfItsAsker) {
     const auto        staller = kit.add<Staller>(0);
     const auto        run     = kit.run(
         [probe, desk, feeder, staller](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
-            const auto start = steady::now();
-            auto [first, second, fed] =
-                co_await qb::io::async::when_all(fill_and_when(ctx, probe, 4s, start), qb::test::expect<Filled>(ctx, probe, 4s),
-                                                 feed_under_a_stall(ctx, feeder, desk, staller, 2500ms));
+            const auto start          = steady::now();
+            auto [first, second, fed] = co_await qb::io::async::when_all(fill_and_when(ctx, probe, qb::duration::max(), start),
+                                                                         qb::test::expect<Filled>(ctx, probe, 4s),
+                                                                         feed_under_a_stall(ctx, feeder, desk, staller, 2500ms));
             (void) fed;
             EXPECT_EQ(first.first, 1) << "the oldest expectation takes the one fill";
             EXPECT_GE(first.second, 2500ms) << "its asker read the answer once the stall was over: two seconds and more after the loan";
@@ -1435,17 +1500,20 @@ TEST(TestKit, AnEventThatReachedTheProbesCoreBeforeItsDeadlineIsNotAnsweredAsNon
     // The probe's deadline is a reminder it sends itself, and a core reads what it sent itself before what the other
     // cores sent it: after a stall of the probe's core the reminder was handled AHEAD of a fill that had waited in its
     // mailbox since long before the window ended -- expect_none said "none", and expect came back empty with the fill
-    // recorded behind it. The probe's core is held from before the fill is sent until after both windows have ended.
+    // recorded behind it. The probe's core is held from the pass that arms the windows until after both have ended and
+    // the fill is in its mailbox: it turns no pass in between, so no stall of the host can end a window first (a
+    // correct "none" then, which this case would have taken for the defect).
     qb::test::TestKit kit;
-    const auto        latch  = std::make_shared<Latch>();
+    const auto        gate   = std::make_shared<Latch>();
     const auto        probe  = kit.probe<Filled>(1);
-    const auto        holder = kit.add<Holder>(1, latch);
+    const auto        holder = kit.add<Holder>(1, gate);
     const auto        local  = kit.probe<Cancelled>(0);
     const auto        run    = kit.run(
-        [probe, holder, local, latch](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
-            auto [none, fill, released] =
-                co_await qb::io::async::when_all(quiet_verdict(ctx, probe, 300ms), fill_verdict(ctx, probe, 300ms),
-                                                 fill_a_held_probe_and_release(ctx, probe, holder, local, latch, 300ms));
+        [probe, holder, local, gate](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
+            ctx.push_to<Hold>(holder);
+            co_await until_held(ctx, gate); // the probe's core reads nothing more until the expectations are all sent
+            auto [none, fill, released] = co_await qb::io::async::when_all(quiet_verdict(ctx, probe, 300ms), fill_verdict(ctx, probe, 300ms),
+                                                                           fill_behind_the_reminders(ctx, probe, holder, local, gate, 300ms));
             (void) released;
             EXPECT_EQ(none, verdict::arrival) << "a fill in the probe's mailbox before the window ended was answered \"none\"";
             EXPECT_EQ(fill, verdict::arrival) << "and an expectation of it came back empty";
@@ -1471,7 +1539,7 @@ TEST(TestKit, AFillCausedOnTheProbesCoreAsItsWindowsEndIsYieldedOnce) {
         [probe, desk, holder, local, latch](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
             auto [none, fill, released] =
                 co_await qb::io::async::when_all(quiet_verdict(ctx, probe, 300ms), fill_verdict(ctx, probe, 300ms),
-                                                 fill_a_held_probe_and_release(ctx, probe, holder, local, latch, 300ms, desk));
+                                                 order_from_a_held_core_and_release(ctx, probe, holder, local, latch, 300ms, desk));
             (void) released;
             EXPECT_NE(none, verdict::gone);
             EXPECT_NE(fill, verdict::gone);

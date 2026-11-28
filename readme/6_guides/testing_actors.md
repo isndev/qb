@@ -73,7 +73,7 @@ TEST(Desk, FillsAnOrder) {
 }
 ```
 
-<!-- src: qb/tests/core/system/patterns/testkit.cpp:854-869 -->
+<!-- src: qb/tests/core/system/patterns/testkit.cpp:916-931 -->
 
 `run` is `true` when the scenario ran to its end, the watchdog did not fire and the engine reported no error; `run.describe()` names what went wrong (`"the scenario threw: ..."`, `"the watchdog stopped the engine"`, `"the engine reported an error (qb::Main::hasError())"`), or says `"ok"`.
 
@@ -93,7 +93,7 @@ Check with `EXPECT_*` inside the scenario. `ASSERT_*` does not compile there: it
 - **A probe that stops with its engine is silent.** Its askers stop with it. Once a probe is gone, however it went, the next `expect` on it throws at once — so a scenario that expects again in the pass after another actor stopped the engine ends on that error; an expectation that already waits is left alone. A probe that records `qb::KillEvent` — the destination an actor under test kills — records the ones it is sent, and ends with the engine.
 - **Expect from a spawned coroutine.** A `TestKit` announces a probe as it adds it, so an `expect` that runs before the probe is built — from an `onInit()`, which runs while the other cores still build their actors — is taken, and answered once the engine has started. A probe added through `engine().addActor` is known from its constructor only: expect on it from a spawned coroutine, which runs once every core has built its actors. And an expectation asked in an `onInit()` is bounded by the asker's core, not by the kit: a core fails an actor whose `onInit()` has not returned when its activation deadline passes — `qb::VirtualCore::activation_deadline_ns`, five seconds unless you set it before `run()`, counted from the moment the actor is built. The expectation throws `cancelled_error` then and the actor is removed: a window longer than what is left of those seconds never gets its answer, and a machine that stalls through them ends one that would have got it. Raise the deadline for such a test, or expect from a spawned coroutine.
 
-<!-- src: qb/src/qb/core/TestKit.h:728-915 (record, on(Expectation), on(ExpectationDeadline), the loan's acknowledgement and withdrawal, on(DownEvent)); qb/tests/core/system/patterns/testkit.cpp:871-1028; qb/tests/core/system/patterns/testkit.cpp:1121-1372; qb/tests/core/system/patterns/testkit.cpp:1387-1406; qb/src/qb/core/TestKit.h:200-350 (the census of the probes); qb/src/qb/core/TestKit.h:924-944 (on(KillEvent)); qb/src/qb/core/TestKit.h:784-786 (the destructor, which says nothing); qb/src/qb/core/TestKit.h:472-480 (the driver's watch of a probe); qb/tests/core/system/patterns/testkit.cpp:1408-2049; qb/src/qb/core/TestKit.h:708-713 (lend); qb/tests/core/system/patterns/testkit.cpp:1348-1372 -->
+<!-- src: qb/src/qb/core/TestKit.h:728-915 (record, on(Expectation), on(ExpectationDeadline), the loan's acknowledgement and withdrawal, on(DownEvent)); qb/tests/core/system/patterns/testkit.cpp:933-1090; qb/tests/core/system/patterns/testkit.cpp:1183-1437; qb/tests/core/system/patterns/testkit.cpp:1452-1471; qb/src/qb/core/TestKit.h:200-350 (the census of the probes); qb/src/qb/core/TestKit.h:924-944 (on(KillEvent)); qb/src/qb/core/TestKit.h:784-786 (the destructor, which says nothing); qb/src/qb/core/TestKit.h:472-480 (the driver's watch of a probe); qb/tests/core/system/patterns/testkit.cpp:1473-2117; qb/src/qb/core/TestKit.h:708-713 (lend); qb/tests/core/system/patterns/testkit.cpp:1410-1437 -->
 
 ## When the scenario asks other actors
 
@@ -108,7 +108,7 @@ const auto run = kit.run<Quote>([quoter](qb::ScopedCoroContext ctx) -> qb::io::a
 
 Without `<Quote>` the reply reaches a driver that does not handle it — a dead letter — and the `ask` times out.
 
-<!-- src: qb/tests/core/system/patterns/testkit.cpp:1052-1077 -->
+<!-- src: qb/tests/core/system/patterns/testkit.cpp:1114-1139 -->
 
 ## The engine and the run
 
@@ -120,7 +120,7 @@ Without `<Quote>` the reply reaches a driver that does not handle it — a dead 
 - **An error on another core does not end the run.** A core other than the driver's that stops on an error — an exception out of a handler there — sets `engine_error` and ends nothing: the scenario runs on, to its end or to the watchdog.
 - **Capture by value.** The scenario is stored in the driver for the run, as any `spawn` body: capture ids and values, never references to the test's locals.
 
-<!-- src: qb/src/qb/core/TestKit.h:1142-1198 (run); qb/tests/core/system/patterns/testkit.cpp:1079-1119; qb/tests/core/system/patterns/testkit.cpp:2051-2074; qb/tests/core/system/patterns/testkit.cpp:2076-2086; qb/tests/core/system/patterns/testkit.cpp:2088-2114; qb/tests/core/system/patterns/testkit.cpp:2116-2138 -->
+<!-- src: qb/src/qb/core/TestKit.h:1142-1198 (run); qb/tests/core/system/patterns/testkit.cpp:1141-1181; qb/tests/core/system/patterns/testkit.cpp:2119-2142; qb/tests/core/system/patterns/testkit.cpp:2144-2154; qb/tests/core/system/patterns/testkit.cpp:2156-2182; qb/tests/core/system/patterns/testkit.cpp:2184-2206 -->
 
 ## Pitfalls
 

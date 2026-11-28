@@ -939,6 +939,20 @@ policy.
 
 ### Fixed
 
+- **Two cases of the test kit are ordered by events, and no longer fail on a kit that is right (Huly QB-57).**
+  `TestKit.AnEventThatReachedTheProbesCoreBeforeItsDeadlineIsNotAnsweredAsNone` armed two windows of 300 ms and
+  held the probe's core a pass later: a host that stalled 300 ms in that gap ended the windows first -- a "none" the
+  probe was right to give, and the case took for the defect. The windows are now armed in the very pass that holds
+  the core: a first hold keeps the probe's core from reading anything until both expectations and a second hold are
+  in its mailbox; the second comes back through the core's own pipe, which a core reads after its loop has started
+  the coroutines that time the windows and before its mailbox; a third, read in that same pass, lasts until the fill
+  is in the mailbox and both windows are over. The core turns no pass in between: no stall can end a window ahead
+  of the fill. `ALoanOutlastsAStallOfItsAsker` gave the expectation that takes the fill four seconds to see it
+  recorded; it sets no deadline now, and the four seconds of the second are a wait that "none" ends whenever they
+  pass. Neither assertion changed: the first case fails 6 runs in 6 with the probe's deadline answered on its first
+  lap again, the second with the loan's expiry put back, and neither fails in 144 runs with the process stopped 300
+  to 900 ms at a time.
+
 - **An expectation asked in an `onInit()` ends with its core's activation deadline: stated, and four cases of the
   kit no longer fail on it (Huly QB-57).** `qb::test::expect` sets no deadline of its own, but a core fails an
   actor whose `onInit()` has not returned when its activation deadline passes -- five seconds by default, counted from
