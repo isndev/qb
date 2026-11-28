@@ -16,7 +16,7 @@ A test of actor code has the same shape every time: an engine, the actors under 
 
 The engine runs for real, on its own threads: a test asserts on what arrives within a deadline, never on an interleaving. The kit depends on no test framework.
 
-<!-- src: qb/src/qb/core/TestKit.h:1070-1165 (TestKit); qb/src/qb/core/TestKit.h:641-936 (TestProbe); qb/src/qb/core/TestKit.h:964-1000 (expect); qb/src/qb/core/TestKit.h:1018-1047 (expect_none); qb/src/qb/core/TestKit.h:532-566 (RunResult) -->
+<!-- src: qb/src/qb/core/TestKit.h:1071-1181 (TestKit); qb/src/qb/core/TestKit.h:641-936 (TestProbe); qb/src/qb/core/TestKit.h:964-1000 (expect); qb/src/qb/core/TestKit.h:1018-1047 (expect_none); qb/src/qb/core/TestKit.h:532-566 (RunResult) -->
 
 ## A first test
 
@@ -115,12 +115,12 @@ Without `<Quote>` the reply reaches a driver that does not handle it — a dead 
 `run(scenario, watchdog = 10 s, core = 0)` adds the driver on `core`, starts the engine on its own threads, waits for the scenario or the watchdog, stops the engine, joins it, and reads `hasError()`. Before `run()`, configure the engine through `kit.engine()` (`core(id).setLatency(...)`, `setIdleSpin(...)`) and add actors through `kit.add<A>(core, args...)` or `kit.engine().addActor<A>(...)`. A core runs at latency 0 — spinning — unless configured otherwise.
 
 - **One run per kit.** An engine does not restart; a second `run()` throws `std::logic_error`. Use one kit per test.
-- **One kit at a time.** The driver ends the run with `qb::Main::stop()`, which stops every engine of the process. And the kit knows one probe per id: a probe's id is its engine's own, and nothing an expectation can read names its engine. Build a kit, run it, let it end, then build the next. A probe added while another kit's probe — or a probe of another engine alive in the process — holds the same id throws `std::logic_error`; one added to a second engine by hand stops that engine's start.
+- **One kit at a time.** The driver ends the run with `qb::Main::stop()`, which stops every engine of the process. And the kit knows one probe per id: a probe's id is its engine's own, and nothing an expectation can read names its engine. Build a kit and run it, then build the next: a kit holds the ids of its probes from `add` to the end of its `run()`, whether its engine started or refused to (and to its destruction when it never runs). A probe added while another kit's probe — or a probe of another engine alive in the process — holds the same id throws `std::logic_error`; one added to a second engine by hand stops that engine's start.
 - **The watchdog.** A scenario that never ends is stopped when `watchdog` passes: `RunResult::timed_out` is set, `completed` is not, and `error` stays empty — the scenario's coroutine is torn down with its core. That verdict is final: what a scenario still does before its core reads the stop — an answer was ahead of it in that core's mailbox, it resumes and returns — changes nothing in the result. A run whose engine stops before its scenario ends — the scenario stopping it, another actor's exception on the driver's core, an engine that refuses to start (a registered core with no actor, an actor whose constructor throws: `engine_error`) — returns then, `completed` unset, whatever the watchdog: the driver's destructor, or the refused start, ends the wait -- and a driver destroyed before its scenario ends reports it not run to its end even if the scenario's frame later finishes (since 3.4, Huly QB-1227; a watchdog of `qb::duration::max()` waits without end). The stop is cooperative: `run()` then joins the engine, so a core held in a handler that never returns keeps it waiting — CTest's own timeout is the bound there.
 - **An error on another core does not end the run.** A core other than the driver's that stops on an error — an exception out of a handler there — sets `engine_error` and ends nothing: the scenario runs on, to its end or to the watchdog.
 - **Capture by value.** The scenario is stored in the driver for the run, as any `spawn` body: capture ids and values, never references to the test's locals.
 
-<!-- src: qb/src/qb/core/TestKit.h:1115-1164 (run); qb/tests/core/system/patterns/testkit.cpp:1053-1087; qb/tests/core/system/patterns/testkit.cpp:1997-2020; qb/tests/core/system/patterns/testkit.cpp:2022-2032; qb/tests/core/system/patterns/testkit.cpp:2034-2056 -->
+<!-- src: qb/src/qb/core/TestKit.h:1124-1180 (run); qb/tests/core/system/patterns/testkit.cpp:1053-1093; qb/tests/core/system/patterns/testkit.cpp:1997-2020; qb/tests/core/system/patterns/testkit.cpp:2022-2032; qb/tests/core/system/patterns/testkit.cpp:2034-2059; qb/tests/core/system/patterns/testkit.cpp:2061-2083 -->
 
 ## Pitfalls
 

@@ -939,6 +939,17 @@ policy.
 
 ### Fixed
 
+- **A `qb::test::TestKit` whose engine refused to start no longer holds its probes' ids once its run is over (Huly
+  QB-57).** A kit announces a probe to the census as it adds it, and a core that refuses to start -- an actor whose
+  constructor throws -- builds none of what follows that actor. The announcement of a probe behind it stayed until
+  the kit itself was destroyed: the run was over, nothing would ever answer at that id, and the next kit that added a
+  probe there got `std::logic_error` -- where, after a run that had built its probes, the same call worked. `run()`
+  now ends what its kit announced, on every way out of it: a probe no core built leaves the census as the run
+  returns, and the destructor does the same for a kit that never ran. Proven by
+  `TestKit.AStartThatWasRefusedLeavesNoAnnouncementBehind` -- a second kit, built while the first is still alive, is
+  given the same id, and the expectation an `onInit()` of its own asks there is answered -- red on the kit as it was,
+  and by one mutant. Found by the fifth independent review of the kit.
+
 - **`qb::spawn_on` returns the `Spawner`'s answer, never a timeout of its own (Huly QB-54).** `spawn_on` asked the
   target core's `Spawner` with a deadline of its own -- the timeout plus a grace of 250 ms -- and read its expiry as
   `unreachable`. On a target core that stalled past it, the `Spawner` created the actor, the actor ran, and the caller

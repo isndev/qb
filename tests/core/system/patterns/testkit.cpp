@@ -2031,6 +2031,33 @@ TEST(TestKit, AStartRefusedBeforeTheDriverIsBuiltEndsTheRunAtOnce) {
     EXPECT_FALSE(run.timed_out) << "nobody was left to end the wait but run() itself";
 }
 
+TEST(TestKit, AStartThatWasRefusedLeavesNoAnnouncementBehind) {
+    // A kit announces a probe as it adds it, and a core that refuses to start builds none of what follows the actor it
+    // could not build: the announcement stayed in the census until the kit itself was destroyed -- a run that was
+    // over, and an id nothing would ever answer from, still held against the next kit. A run ends its kit's
+    // announcements, as a run that built its probes ends them.
+    qb::test::TestKit refused;
+    (void) refused.add<Unbuildable>(1);
+    const auto never_built = refused.probe<Filled>(1); // behind the actor that throws: announced, never built
+    const auto ran         = refused.run([](qb::ScopedCoroContext) -> qb::io::async::task<void> { co_return; }, 30s);
+    EXPECT_TRUE(ran.engine_error) << ran.describe();
+    EXPECT_FALSE(ran.completed);
+    // `refused` is still alive: its run is over, and that is all the next kit needs.
+    qb::test::TestKit kit;
+    (void) kit.add<SlowToBuild>(1, 100ms);
+    qb::ActorId probe;
+    EXPECT_NO_THROW(probe = kit.probe<Filled>(1)) << "an announcement of a run that is over was held against the next kit";
+    EXPECT_EQ(probe, never_built) << "the case is about ONE id: the second kit's probe must be given the first one's";
+    const auto told = kit.probe<Cancelled>(0);
+    (void) kit.add<Early>(0, probe, told);
+    const auto run = kit.run(
+        [told](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
+            EXPECT_EQ(co_await next_told(ctx, told), static_cast<int>(verdict::quiet)) << "2: the id was not this kit's probe's";
+        },
+        30s);
+    EXPECT_TRUE(run) << run.describe();
+}
+
 TEST(TestKit, AScenarioThatEndsAfterTheWatchdogDecidedIsNotReportedCompleted) {
     // The watchdog fires while the scenario's core is held in a handler, and the answer to its expectation is in that
     // core's mailbox, ahead of the stop: the scenario resumes, returns, and a run that had `timed_out` was reported

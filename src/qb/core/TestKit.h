@@ -1063,8 +1063,9 @@ inline constexpr bool is_probe<TestProbe<Events...>> = true;
  *          verdict is final: what a scenario still does before its core reads the stop is not reported. One run per
  *          kit: an engine does not restart.
  *          `qb::Main::stop()` stops every engine of the process, and a probe's id is known to the kit by itself,
- *          not by its engine: one kit alive at a time -- built, run, destroyed, then the next. A probe added while
- *          another kit's probe holds the same id throws `std::logic_error`. Configure
+ *          not by its engine: one kit at a time -- built and run, then the next. A probe added while another kit's
+ *          probe holds the same id throws `std::logic_error`; a kit holds its ids from `add()` to the end of its
+ *          `run()`, whether its engine started or refused to (to its destruction when it never runs). Configure
  *          the cores through `engine()` before `run()` (a core runs at latency 0, spinning, by default).
  */
 class TestKit {
@@ -1072,13 +1073,19 @@ class TestKit {
     std::vector<qb::ActorId> _probes; ///< Announced to the census as they are added: see `add()`
     bool                     _ran = false;
 
+    /// What this kit announced and no core built leaves the census. A probe that was built left it as it was destroyed.
+    void
+    withdraw() noexcept {
+        for (const auto id : _probes)
+            detail::probes().withdraw(id, this);
+    }
+
 public:
     TestKit()                           = default;
     TestKit(TestKit const &)            = delete;
     TestKit &operator=(TestKit const &) = delete;
     ~TestKit() {
-        for (const auto id : _probes)
-            detail::probes().withdraw(id, this); // one no core ever built -- an engine that did not start -- leaves here
+        withdraw(); // a kit that never ran: nothing it announced was built
     }
 
     /// The engine, for anything the kit does not wrap: `core(id).setLatency(...)`, `addActor`.
@@ -1131,6 +1138,15 @@ public:
                       "qb::test::TestKit::run: the scenario is a qb::io::async::task<void>(qb::ScopedCoroContext) callable");
         if (std::exchange(_ran, true))
             throw std::logic_error("qb::test::TestKit::run: one run per kit (an engine does not restart)");
+        // However this run ends, its engine builds nothing more. A probe a core never built -- a start that was refused,
+        // a driver that could not be added -- is announced for nothing from then on: it leaves the census with the run,
+        // as a probe that was built leaves it with its engine, not when the kit is destroyed.
+        struct Announcements {
+            TestKit &kit;
+            ~Announcements() {
+                kit.withdraw();
+            }
+        } announced{*this};
         auto state = std::make_shared<detail::ScenarioState>();
         if (!_engine.addActor<driver_t>(core, std::forward<Scenario>(scenario), state).is_valid())
             throw std::logic_error("qb::test::TestKit::run: the scenario driver could not be added");

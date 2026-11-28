@@ -45,7 +45,7 @@ llm/qb.llm.api.md	DeathWatch.h:79-96	4301514665c6	/*!
 llm/qb.llm.api.md	Event.h:940-941	e76bd16e4192	template <typename... _Args>
 llm/qb.llm.api.md	Event.h:949-950	46b3869d9c8b	template <typename... _Args>
 llm/qb.llm.api.md	TestKit.h:1018-1047	c4dc11441978	template <typename E>
-llm/qb.llm.api.md	TestKit.h:1070-1165	0bed74213260	class TestKit {
+llm/qb.llm.api.md	TestKit.h:1071-1181	00601a875212	class TestKit {
 llm/qb.llm.api.md	TestKit.h:532-566	ca981c92a86c	struct RunResult {
 llm/qb.llm.api.md	TestKit.h:579-583	414ee3f8cbca	class probe_gone_error : public std::runtime_error {
 llm/qb.llm.api.md	TestKit.h:641-936	6069a839e5bd	template <typename... Events>
