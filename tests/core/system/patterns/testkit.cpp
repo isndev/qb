@@ -34,8 +34,10 @@
 
 #include <gtest/gtest.h>
 #include <qb/testkit.h>
+#include "../../shared/InitFixtures.h"
 #include <atomic>
 #include <chrono>
+#include <cstdint>
 #include <memory>
 #include <stdexcept>
 #include <string>
@@ -789,19 +791,21 @@ public:
 /// An asker whose `onInit()` -- it runs while the other cores still build their actors -- expects a quiet window on
 /// `probe`, and tells `told` the verdict.
 class Early : public qb::Actor {
-    qb::ActorId _probe;
-    qb::ActorId _told;
+    qb::ActorId  _probe;
+    qb::ActorId  _told;
+    qb::duration _window;
 
 public:
-    Early(qb::ActorId probe, qb::ActorId told)
+    Early(qb::ActorId probe, qb::ActorId told, qb::duration window = 50ms)
         : _probe(probe)
-        , _told(told) {}
+        , _told(told)
+        , _window(window) {}
     qb::io::async::task<bool>
     onInit() override {
         registerEvent<qb::test::detail::Expectation>(*this);
         auto       ctx   = context();
         const auto told  = _told;
-        const auto heard = co_await quiet_verdict(ctx, _probe, 50ms);
+        const auto heard = co_await quiet_verdict(ctx, _probe, _window);
         ctx.push_to<Cancelled>(told, static_cast<int>(heard));
         co_return true;
     }
@@ -809,6 +813,16 @@ public:
     on(qb::test::detail::Expectation &e) {
         (void) resolve_ask(e);
     }
+};
+
+/// The activation deadline of a case whose actors expect in their `onInit()`. A core fails an actor whose `onInit()`
+/// has not returned when that deadline passes -- five seconds by default, counted from the moment the actor is built --
+/// and an expectation asked there ends with it: a host that stalls for those seconds before the engine has started
+/// made such a case fail on a kit that was right. Ten minutes: more than any stall the case has to outlast, and still
+/// an end for a case that is broken.
+struct PatientActivation : qb::test::ScopedDeadline {
+    PatientActivation()
+        : qb::test::ScopedDeadline(std::uint64_t{600} * 1000u * 1000u * 1000u) {}
 };
 
 /// A probe on `probe_core` killed BEFORE two expectations are sent to it from core 0 -- the kill is ahead of them in
@@ -1677,7 +1691,8 @@ TEST(TestKit, AnExpectationSentBeforeItsProbeIsBuiltIsAnswered) {
     // exist yet when the asker expects on it -- its core is building, for 400 ms, the actor added ahead of it. The
     // asker's own clock (the window and 250 ms) had run out when the engine started, and the window read as broken; a
     // census of the probes that are BUILT refuses the id instead. A kit announces a probe when it is added.
-    qb::test::TestKit kit;
+    const PatientActivation patient;
+    qb::test::TestKit       kit;
     (void) kit.add<SlowToBuild>(1, 400ms);
     const auto probe = kit.probe<Filled>(1);
     const auto told  = kit.probe<Cancelled>(0);
@@ -1688,6 +1703,30 @@ TEST(TestKit, AnExpectationSentBeforeItsProbeIsBuiltIsAnswered) {
         },
         30s);
     EXPECT_TRUE(run) << run.describe();
+}
+
+TEST(TestKit, AnExpectationAskedInAnOnInitEndsAtItsCoresActivationDeadline) {
+    // The bound of the case above, and it is the core's, not the kit's: an asker sets no deadline, but a core fails an
+    // actor whose `onInit()` has not returned when its activation deadline passes -- five seconds by default, 200 ms
+    // here. The actor's scope is cancelled, the expectation throws `cancelled_error` out of the `onInit()`, and the
+    // actor is removed: its window of an hour on a quiet probe never gets its answer. Nothing else ends it -- the run
+    // stops only once its death is heard.
+    const qb::test::ScopedDeadline deadline{std::uint64_t{200} * 1000u * 1000u};
+    qb::test::TestKit              kit;
+    const auto                     probe   = kit.probe<Filled>(1);
+    const auto                     told    = kit.probe<Cancelled>(0);
+    const auto                     deaths  = kit.probe<Cancelled>(0);
+    const auto                     mourner = kit.add<Mourner>(0, deaths);
+    const auto                     early   = kit.add<Early>(0, probe, told, std::chrono::hours(1));
+    const auto                     run     = kit.run(
+        [told, deaths, mourner, early](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
+            ctx.push_to<Mourn>(mourner, early);
+            EXPECT_TRUE((co_await qb::test::expect<Cancelled>(ctx, deaths, 30s)).has_value()) << "the core ended the actor at its deadline";
+            EXPECT_FALSE((co_await qb::test::expect<Cancelled>(ctx, told, 0s)).has_value()) << "it told a verdict: its window was answered";
+        },
+        60s);
+    EXPECT_TRUE(run.completed) << run.describe();
+    EXPECT_FALSE(run.timed_out) << run.describe();
 }
 
 TEST(TestKit, AProbeAddedThroughTheEngineIsKnownOnceItIsBuilt) {
@@ -1711,7 +1750,8 @@ TEST(TestKit, AProbeAtAnIdAnotherKitsProbeHoldsIsALogicErrorAndTakesNothingFromI
     // per id. A second kit's probe at an id the first holds was taken for it -- and when either ended, the other's
     // expectations were refused, on a probe that was alive. It is refused where it is added, and the first kit's
     // probe is still the one an `onInit()` expects on before it is built.
-    qb::test::TestKit first;
+    const PatientActivation patient;
+    qb::test::TestKit       first;
     (void) first.add<SlowToBuild>(1, 100ms);
     const auto probe = first.probe<Filled>(1);
     const auto told  = first.probe<Cancelled>(0);
@@ -1738,7 +1778,8 @@ TEST(TestKit, AKitThatEndsLeavesAnotherKitsAnnouncementAlone) {
     // A kit that ended withdrew every id it had announced -- its probes long gone, and the same ids announced since by
     // the kit built after it, whose `onInit()` expectation was then refused. It withdraws what it announced and no
     // core ever built, nothing else.
-    auto before = std::make_unique<qb::test::TestKit>();
+    const PatientActivation patient;
+    auto                    before = std::make_unique<qb::test::TestKit>();
     (void) before->add<SlowToBuild>(1, 1ms);
     (void) before->probe<Filled>(1);
     const auto ran = before->run([](qb::ScopedCoroContext) -> qb::io::async::task<void> { co_return; }, 30s);
@@ -1762,7 +1803,8 @@ TEST(TestKit, AProbeBuiltAtAnIdAKitAnnouncedIsNotTakenForIt) {
     // through another kit's engine, or to an engine with no kit -- took it: built in its name, and gone with it when
     // that engine ended, the announcing kit's `onInit()` expectation refused. A probe says who adds it: the
     // announcement is its kit's alone, and the other engine does not start.
-    qb::test::TestKit kit;
+    const PatientActivation patient;
+    qb::test::TestKit       kit;
     (void) kit.add<SlowToBuild>(1, 100ms);
     const auto probe = kit.probe<Filled>(1);
     const auto told  = kit.probe<Cancelled>(0);
@@ -2048,7 +2090,8 @@ TEST(TestKit, AStartThatWasRefusedLeavesNoAnnouncementBehind) {
     // could not build: the announcement stayed in the census until the kit itself was destroyed -- a run that was
     // over, and an id nothing would ever answer from, still held against the next kit. A run ends its kit's
     // announcements, as a run that built its probes ends them.
-    qb::test::TestKit refused;
+    const PatientActivation patient;
+    qb::test::TestKit       refused;
     (void) refused.add<Unbuildable>(1);
     const auto never_built = refused.probe<Filled>(1); // behind the actor that throws: announced, never built
     const auto ran         = refused.run([](qb::ScopedCoroContext) -> qb::io::async::task<void> { co_return; }, 30s);

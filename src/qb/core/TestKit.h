@@ -968,7 +968,13 @@ public:
  *       `TestKit`'s scenario is told -- its driver watches the probe -- and the expectation throws; an expectation of
  *       an actor that is not the kit's driver waits for as long as that actor lives.
  * @note Call it from a spawned coroutine. From an `onInit()`, a probe on ANOTHER core that no `TestKit` added may not
- *       be built yet: the census does not know it, and `expect` throws.
+ *       be built yet: the census does not know it, and `expect` throws. And an expectation asked there is bounded by
+ *       the asker's core, not by the kit: a core fails an actor whose `onInit()` has not returned when its activation
+ *       deadline passes (`qb::VirtualCore::activation_deadline_ns`: five seconds unless set before the engine starts,
+ *       counted from the moment the actor is built). The actor's scope is cancelled, the expectation throws
+ *       `cancelled_error`, and the actor is removed: a window or a timeout longer than what is left of those seconds
+ *       never gets its answer, and a host that stalls through them ends one that would have got it. Raise the
+ *       deadline, or expect from a spawned coroutine.
  */
 template <typename E>
 [[nodiscard]] qb::io::async::task<std::optional<E>>
@@ -1023,6 +1029,7 @@ expect(qb::ScopedCoroContext ctx, qb::ActorId probe, qb::duration timeout) {
  *         a probe that is gone.
  * @throws qb::io::async::cancelled_error when the asking actor is killed, before or meanwhile.
  * @note A probe that ends otherwise than by a `qb::KillEvent` answers nobody: see `expect`.
+ * @note From an `onInit()`, the asker core's activation deadline ends the window: see `expect`.
  */
 template <typename E>
 [[nodiscard]] qb::io::async::task<bool>

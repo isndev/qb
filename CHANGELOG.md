@@ -939,6 +939,18 @@ policy.
 
 ### Fixed
 
+- **An expectation asked in an `onInit()` ends with its core's activation deadline: stated, and four cases of the
+  kit no longer fail on it (Huly QB-57).** `qb::test::expect` sets no deadline of its own, but a core fails an
+  actor whose `onInit()` has not returned when its activation deadline passes -- five seconds by default, counted from
+  the moment the actor is built: the actor's scope is cancelled, the expectation throws `cancelled_error`, the actor
+  is removed. The header and the guide now say so, with the remedy (`qb::VirtualCore::activation_deadline_ns`, or a
+  spawned coroutine), and `TestKit.AnExpectationAskedInAnOnInitEndsAtItsCoresActivationDeadline` pins it: a
+  deadline of 200 ms, a window of an hour on a quiet probe, and the actor's death heard. Four cases of the kit's own
+  suite expect from an `onInit()` and ran under those five seconds: with the process stopped once for 5.2 to 5.6 s,
+  20 to 80 ms after its launch, they failed 6, 12, 12 and 12 runs in 12 on a kit that was right (and the case of the
+  entry below, 12 in 12). They now run under an activation deadline of ten minutes -- longer than any stall they
+  have to outlast, still an end for a case that is broken: none failed in 12 under the same stop.
+
 - **`qb::test::TestProbe<qb::SignalEvent>` is refused at compile time (Huly QB-57).** A probe registers a handler for
   each type it records, and for `qb::SignalEvent` that handler took the place of the one that ends an actor when its
   engine stops: the probe recorded the stop and stayed, and `TestKit::run()` never came back from its join.
