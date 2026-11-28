@@ -755,11 +755,15 @@ concept never_recorded = std::is_same_v<E, Expectation> || std::is_same_v<E, Exp
                          || std::is_same_v<E, ExpectationWithdrawn> || std::is_same_v<E, qb::SignalEvent>;
 
 /**
- * @brief One pass of the calling core: `co_await asker_pass{}` resumes in the turn of the loop of the next one.
+ * @brief A pass of the calling core: `co_await asker_pass{}` resumes in the turn of the loop of a later pass -- the
+ *        next one at the earliest.
  * @details A request deadline of zero (`qb::detail::request_deadline`, what times a `qb::ask`): fired at the head of
  *          a pass and by nothing else -- not by a pump of the loop, as a timer or a yield is, in an `onInit()` that
  *          runs before the engine has started. Where it resumes is known: behind the receive of the pass that
- *          suspended it, ahead of the next. Not cancel-aware: what waits on it reads its scope when it resumes.
+ *          suspended it, ahead of the receive of the pass that fires it. That pass is the next one, or a later one
+ *          when the next reads the same tick of the clock (the deadline is due a nanosecond after it is armed): a wait
+ *          that counts passes counts at least as many. Not cancel-aware: what waits on it reads its scope when it
+ *          resumes.
  */
 struct asker_pass {
     static constexpr char const *qb_suspension_kind = "qb::test pass"; ///< suspension tracking (coroutine/tracking.h)
@@ -804,8 +808,9 @@ private:
  *          probe that had only stopped a pass ahead of it -- out of a `spawn` body, a line on stderr in a run that had
  *          gone well. A stop is a signal, and a core that reads one hands it to its actors in the receive of that
  *          very pass: two passes of the asker's core after the probe was found gone, a stop that took the probe has
- *          reached the asker. It is then cancelled, and that is what it is told; an asker still there is told the
- *          probe is gone.
+ *          reached the asker. One that ends on it is cancelled then, and that is what it is told. An asker still there
+ *          -- one that ignores the stop, or handles it and ends a pass or more later -- is told the probe is gone, and
+ *          out of a `spawn` body that error is printed: such an asker catches it.
  * @param own The asker's own scope (`expectation_scope::own`): it tells whether the asker lives, whatever `ctx` is.
  * @return The error to throw.
  * @throws qb::io::async::cancelled_error when the asker ended meanwhile, or the scope of `ctx` did.
@@ -1182,7 +1187,8 @@ public:
  *         it is answered). A probe found gone is told two passes of the asker's core later, no window waited: by then a
  *         stop of the engine that took the probe has reached the asker, which is cancelled instead.
  * @throws qb::io::async::cancelled_error when the asking actor is killed, before or meanwhile -- by a stop of its
- *         engine too, which is why a run that ends well prints nothing for an expectation asked as it stops -- and
+ *         engine too, for an asker that ends on the stop: a run that ends well prints nothing for an expectation such
+ *         an asker asks as it stops (one that ends later is told the probe is gone, see `detail::gone`) -- and
  *         when the scope of @p ctx is cancelled meanwhile: an expectation ends with the scope it is asked in, as a
  *         `sleep` does, and its waiter is withdrawn from the probe. The asker's kill ends it whatever scope @p ctx
  *         carries, and is told as such.

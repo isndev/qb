@@ -1006,7 +1006,9 @@ policy.
   still there. A stop is a signal, and a core hands a signal to its actors in the receive of the pass that reads it:
   two passes after the probe was found gone, a stop that took the probe has reached the asker, which is cancelled
   like any actor that stops -- `cancelled_error`, which a `spawn` body ends on in silence. An asker that is not
-  stopped is told the probe is gone, as before, with no window waited. The same holds for an expectation that a core's
+  stopped is told the probe is gone, as before, with no window waited -- one that ignores the stop, and one that
+  handles it and ends a pass or more later (`AnAskerThatHandlesTheStopAndEndsLaterIsToldItsProbeIsGone`): such an
+  asker catches the error, or its `spawn` body prints it. The same holds for an expectation that a core's
   stop ends under a scenario. Proven by `TestKit.AnAskerTheStopOfItsEngineHasNotReachedIsNotToldItsProbeIsGone`: an
   asker holds its core from before the scenario lets the engine stop until the probe's core has reaped the probe,
   then expects, and the case reads stderr -- the line was printed in 6 runs of 6 on the kit as it was, in none of 10

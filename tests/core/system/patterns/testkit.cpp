@@ -890,6 +890,55 @@ public:
     }
 };
 
+/// `HeldThroughTheStop`, but an asker that handles the stop itself: on the signal it sends itself an event, and it ends
+/// on that event, a pass later. It records what its last expectation ended with in `ended` (1: `cancelled_error`, 4:
+/// `probe_gone_error`, 5: anything else) -- caught, so that nothing escapes its coroutine.
+class HeldAndGraceful : public qb::test::Asker {
+    qb::ActorId                       _probe;
+    std::shared_ptr<StopFlags>        _flags;
+    std::shared_ptr<std::atomic<int>> _ended;
+    bool                              _stopping = false;
+
+public:
+    HeldAndGraceful(qb::ActorId probe, std::shared_ptr<StopFlags> flags, std::shared_ptr<std::atomic<int>> ended)
+        : _probe(probe)
+        , _flags(std::move(flags))
+        , _ended(std::move(ended)) {}
+    qb::io::async::task<bool>
+    onInit() override {
+        registerEvent<qb::SignalEvent>(*this);
+        registerEvent<Later>(*this);
+        spawn([probe = _probe, flags = _flags, ended = _ended](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
+            (void) co_await qb::test::expect<Filled>(ctx, probe, 0s); // a live probe answers
+            flags->holding.store(true);
+            // No scenario leaves it waiting: the bound only keeps a broken one from holding the engine's join for ever.
+            for (const auto give_up = steady::now() + 60s; !flags->reaped.load() && steady::now() < give_up;)
+                std::this_thread::sleep_for(1ms);
+            flags->expected.store(flags->reaped.load());
+            try {
+                (void) co_await qb::test::expect<Filled>(ctx, probe, 0s);
+                ended->store(2);
+            } catch (qb::io::async::cancelled_error const &) {
+                ended->store(1);
+            } catch (qb::test::probe_gone_error const &) {
+                ended->store(4);
+            } catch (...) {
+                ended->store(5);
+            }
+        });
+        co_return true;
+    }
+    void
+    on(qb::SignalEvent const &) {
+        if (!std::exchange(_stopping, true))
+            push<Later>(id());
+    }
+    void
+    on(Later const &) {
+        kill();
+    }
+};
+
 /// Counts one expectation as sent to `probe`, and ends its core: what an expectation leaves behind that was still in
 /// its asker's pipe when an exception stopped that core -- a count, and nothing that will ever arrive.
 class Doomed : public qb::Actor {
@@ -2504,8 +2553,10 @@ TEST(TestKit, AScenarioWhoseEngineIsStoppedByAnotherActorIsNotToldItsProbesAreGo
     // An engine that another actor stops takes the probes and the scenario together. The driver's watch of its probes
     // is answered then too -- "killed" -- and its core, held meanwhile, reads that answer before it reads the stop:
     // acted on, it ended the scenario's expectation with an error, and the run reported it or not by which of the two
-    // its core read first. The watch does end the expectation -- whatever ended the probe -- but the scenario is told
-    // two passes of its core later, and only if it is still there: the stop has reached it by then.
+    // its core read first. The watch does end the expectation -- whatever ended the probe -- but the scenario is not told
+    // at once, and only if it is still there: the stop has reached it by then. What this case pins is "not at once" (a
+    // cancelled scope already resumes its waiter a pass later); the second pass is the census path's, and
+    // `AnAskerTheStopOfItsEngineHasNotReachedIsNotToldItsProbeIsGone` pins it.
     qb::test::TestKit kit;
     const auto        probe   = kit.probe<Filled>(1);
     const auto        stopper = kit.add<Stopper>(1);
@@ -2547,6 +2598,28 @@ TEST(TestKit, AnAskerTheStopOfItsEngineHasNotReachedIsNotToldItsProbeIsGone) {
     EXPECT_TRUE(run) << run.describe();
     EXPECT_TRUE(flags->expected.load()) << "the asker did not expect on a probe that the stop had taken ahead of it: nothing was proved";
     EXPECT_EQ(printed.find("let an exception escape"), std::string::npos) << "a run that went well printed on stderr: " << printed;
+}
+
+TEST(TestKit, AnAskerThatHandlesTheStopAndEndsLaterIsToldItsProbeIsGone) {
+    // The bound of the case above. The stop reaches an asker in the receive of the pass that reads it; one that ends
+    // on it is cancelled by then, and is told nothing. One that handles the stop itself and ends a pass later is still
+    // there two passes after its probe was found gone -- it is told the probe is gone, as an asker that ignores the
+    // stop is. Out of a `spawn` body that error is printed: such an asker catches it.
+    const auto        flags = std::make_shared<StopFlags>();
+    const auto        ended = std::make_shared<std::atomic<int>>(0);
+    qb::test::TestKit kit;
+    const auto        probe = kit.probe<Filled>(1);
+    (void) kit.add<Lingerer>(1, flags);
+    (void) kit.add<HeldAndGraceful>(2, probe, flags, ended);
+    const auto run = kit.run(
+        [flags](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
+            while (!flags->holding.load())
+                co_await ctx.sleep(1ms); // the asker's core is held: the stop that follows this scenario is not read there
+        },
+        30s);
+    EXPECT_TRUE(run) << run.describe();
+    EXPECT_TRUE(flags->expected.load()) << "the asker did not expect on a probe that the stop had taken ahead of it: nothing was proved";
+    EXPECT_EQ(ended->load(), 4) << "1: cancelled, as if it had ended on the signal; 0: it never ended";
 }
 
 TEST(TestKit, AnExpectationOfAProbeWhoseCoreStoppedOnAnErrorThrowsAtOnce) {
