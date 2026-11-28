@@ -168,12 +168,12 @@ policy.
   `refused` when the core admitted nothing (no slot, a service of that tag already there, teardown, a constructor that
   threw -- the spawner contains it, the core keeps running -- or an `onInit()` failing before its first suspension,
   whose admission the core rolls back), `not_ready` with the id when an async init failed or outlasted the timeout,
-  `unreachable` when no answer came (no spawner there, a core the engine does not run); a timeout of zero or less sets
-  no deadline of the spawner's or of the ask's, as `qb::ask` does (the core's activation deadline, 5 s by default,
-  still ends an init that never completes: `not_ready`). The arguments are taken by value and travel in a type-erased
+  `unreachable` when no spawner took the request (none there, a core the engine does not run, one that ended first);
+  a timeout of zero or less sets no deadline of the spawner's (the core's activation deadline, 5 s by default, still
+  ends an init that never completes: `not_ready`), and the caller sets none in any case (the entry under Fixed). The arguments are taken by value and travel in a type-erased
   factory behind a `shared_ptr`: only its pointer crosses the mailbox, so any movable argument works, a `std::string`
   included. No actor pointer crosses a core. The caller registers `qb::SpawnRequest`, as for any `qb::ask` exchange;
-  the spawner owns nothing it creates. Proven by `qb-core-test-system-spawn-on` (12 cases, driven by the test kit:
+  the spawner owns nothing it creates. Proven when it landed by `qb-core-test-system-spawn-on` (12 cases, driven by the test kit:
   another core and the caller's own, the actor running and reachable there, the arguments moved, an async init waited
   for, a failure before and after suspending, a service already there, a core without spawner and one that does not
   exist, eight spawns in flight, a caller without the registration, a throwing constructor, a zero timeout, a timeout
@@ -182,7 +182,7 @@ policy.
   core and the zero timeout answering `unreachable` at the 250 ms grace with the actor's id lost; both fixed, each
   with its case and its mutant. A second review found the docs promising a zero timeout no deadline at all, when the
   core's activation deadline still applies (worded now), and a timeout of `qb::duration::max()` overflowing its grace
-  (saturated now); the arguments are pinned in the frame, as `ask_emplace` pins them (Huly QB-213).
+  (saturated then: the grace is gone since, the entry under Fixed); the arguments are pinned in the frame, as `ask_emplace` pins them (Huly QB-213).
 
 - **An actor test kit: `<qb/testkit.h>`, namespace `qb::test` (Huly QB-57).** Every test of actor code had the same
   scaffolding -- an engine, a hand-written driver actor, `std::atomic` globals, a guard proving the driver ran, a
@@ -938,6 +938,98 @@ policy.
   free it after the loop, or stop it first. Nothing in qb, the modules or the examples frees one started (audited).
 
 ### Fixed
+
+- **`qb::spawn_on` returns the `Spawner`'s answer, never a timeout of its own (Huly QB-54).** `spawn_on` asked the
+  target core's `Spawner` with a deadline of its own -- the timeout plus a grace of 250 ms -- and read its expiry as
+  `unreachable`. On a target core that stalled past it, the `Spawner` created the actor, the actor ran, and the caller
+  had been told the core could not be reached: an orphan whose id was lost. On the caller's own core the two came due
+  in one pass after a stall, and a core checks its request deadlines before it reads what it was sent. Both in 3 runs
+  of 3 with the core held 600 ms under a timeout of 100 -- the class of the test kit's own timeout, one pattern over.
+  The caller now sets no deadline: the timeout is the `Spawner`'s wait for the actor's `onInit()`, on the target
+  core's clock, and `spawn_on` returns what the `Spawner` answers, however late. The `Spawner`'s own wait had the
+  fault one hop over -- a core held past the timeout reads the wait's deadline before it runs the turn that ends the
+  init -- and reported `not_ready` an actor that was active: the answer now says what the actor is when it is written,
+  whatever the wait saw -- `not_ready` too for one that ended itself first. `unreachable` is a fact: no `Spawner` took
+  the request, and nothing was created. The `Spawner`s of the process are in a census (`detail::spawner_census`), each
+  under the service id `spawn_on` computes for its core and under its birth. None there -- none added, or a core the
+  engine does not run -- is answered at once, with nothing sent (a timeout of zero used to wait for it until the
+  caller was killed). A request is stamped with the last birth, and a waiting `spawn_on` reads every 100 ms, at the
+  head of a pass, whether a `Spawner` it was sent to still exists: one built on the core afterwards was not asked, and
+  creates nothing for a request older than itself. When none is left, `spawn_on` returns what the request it shares
+  with the `Spawner` says -- `not_ready` and the id when an actor was created, by a `Spawner` that then ended with its
+  core, on an error there, or with its engine, its answer unsent; `refused` when one took it and its core admitted
+  nothing, the refusal unsent; `unreachable` otherwise. What a `Spawner` had sent is read first. One that is killed
+  answers the requests still waiting, with the id -- it used to answer nobody -- creates nothing more, and leaves the
+  census only once every core it told what an actor is has read what it was sent: each is asked, in the pipe the
+  answers took, the death watch of an id nobody holds there -- a question the core itself answers when it reads it,
+  and which this core answers for one that has stopped. Its own core is asked too: that answer is the pass it waits
+  before it ends, and the kernel's, so nothing of its ending is left as a dead letter if it is ended at once
+  meanwhile. (A core it only refused, or told `unreachable`, is not asked: the caller reads the same from the request.
+  A request read in its last pass is answered by nobody: a raw `qb::ask` of a `Spawner` needs a deadline of its own.)
+  Its answer has been read by then, however slowly the caller's core reads. A `Spawner` that ends at once -- a
+  terminal signal, a `kill()` called on it, its core stopping on an error -- answers nothing more and waits for
+  nobody; what it had pushed may still be on its core. The caller reads it gone and concludes one pass later, its
+  mailbox read to the end in between -- both at the head of a pass, where a reading from a timer could fall in the
+  core's park or under a pump of its loop, with no receive before the verdict -- and returns what the request says. A
+  caller that does not register `qb::SpawnRequest` hears no answer once it is active, and `spawn_on` no longer invents
+  one: it waits for as long as the `Spawner` lives -- then returns `not_ready` and the id -- where it returned
+  `unreachable` 350 ms later with the actor alive. The request leaves at the caller's next pass -- a request deadline
+  of zero (`detail::core_wait`), which no pump of the loop resumes: from an `onInit()` every core has built its actors
+  by then, the target's `Spawner` included, whatever another `onInit()` of that core runs meanwhile. A caller killed
+  meanwhile is told so (`cancelled_error`) when that pass resumes it, whatever the census says. One limit stays, which
+  the kernel alone can lift -- it knows the engine of the calling core, and this change adds no accessor to it: two
+  engines alive at once in one process that both run a `Spawner` on the same core index hold the same id, and a
+  `spawn_on` whose own engine has none there, or whose `Spawner` ends without answering it, waits for as long as a
+  `Spawner` of the other engine born before the request lives. What it costs, measured on an M4 (Release). A call: 432
+  ns before and 597 ns after to another core, 227 and 490 on the caller's own (3000 spawns in a row of an actor whose
+  `onInit()` returns at once, 30 rounds a side over six runs interleaved, medians). A pass of the caller's core while
+  a call waits: spinning, 33 ns with nothing waiting, 37.2 before -- the ask's own deadline was armed -- and 43.1
+  after, for one call or 64; parking (a latency of 1 s), one pass a second before and about 12,000 after -- ten
+  readings a second, each for the core's idle spin, 50 us. The census read itself is 5 to 7 ns (72 ns with four
+  threads reading it at once); the rest of a call is the race -- the request, the watch and the `when_any` that runs
+  them, a deadline armed and disarmed -- and the pass the request waits for. `detail::spawn_reply_grace` and
+  `detail::add_saturating` are gone, and the factory a request carries guards its one construction with an atomic: a
+  `qb::SpawnRequest` copied to two `Spawner`s shares it between two cores. Thirty-three cases join
+  `qb-core-test-system-spawn-on` (45): the two stalls, held from inside the request by a constructor that takes 600
+  ms; a `Spawner` killed under a request and ahead of one, its answer read before it leaves the census (6000 events
+  queued ahead of the answer for a consumer that takes 150 us each: one kill, and two with two cores answered), a
+  request that reaches a killed `Spawner` and creates nothing, a wait that ends in a killed `Spawner`'s last pass and
+  leaves no dead letter, a settlement read behind the kill that answered its request, a `Spawner` killed beside a core
+  that has stopped, with events for it that will never leave, and one waiting for a core that stops under it; a
+  `Spawner` killed and ended at once in that pass; a request answered once, by its kill or by its settlement,
+  whichever came first; a death nobody asked about, pushed or forwarded to a `Spawner` that serves; one ended at once
+  -- a core that stops on an error with an actor created, with the request behind the event that stops it, with a
+  refusal that never left; an engine stopped under a request; a terminal signal in the pass its actor became active;
+  an answer that left before its `Spawner` ended at once, read before the `Spawner` is read as gone -- the caller's
+  thread held inside a pass ahead of its reading, then the caller on a core that parks, then inside a handler that
+  runs its loop -- a `Spawner` built after a request was sent, and one of another engine born later at the same id; a
+  target core held past the `Spawner`'s own timeout, and an actor that ends itself before its answer is written; a
+  settlement nobody's wait sent; a spawn from an `onInit()`, and beside an `onInit()` that runs its loop; a caller
+  killed before its request leaves; a request copied to two `Spawner`s; the census alone. Four cases move: a core
+  without a `Spawner` no longer asserts that 100 ms passed, and asserts the same of a timeout of zero and that no dead
+  letter was sent, on either core; the caller that registers nothing races its `spawn_on` against the actor's own
+  hello instead of reading `unreachable`; the activation deadline's case drops its upper bound of 2.5 s and waits for
+  an init of an hour; the async init's sets no deadline at all -- the last two went red under a host stall of 3 s and
+  of 5.3 s. Twelve of the 28 that build unchanged on the pattern as it was are red there, 3 runs in 3 -- the two
+  stalls, a core without a `Spawner` under a timeout of zero, the caller that registers nothing, a `Spawner` killed
+  under a request and a request behind its kill, a core that stops on an error (twice), an engine stopped under a
+  request, a signal in the pass the actor became active (the old wait outlived its `Spawner` and answered `spawned`,
+  where `not_ready` and the id are read now), a target core held past the `Spawner`'s timeout (through the caller's
+  own deadline), an actor that ends itself before its answer (the old answer said what its wait had seen) -- five of
+  them at the watchdog: a `Spawner` that was killed or whose core stopped answered nobody, and a core without one was
+  waited on for ever under a timeout of zero. The other seventeen read what this change adds. Forty-one mutants are
+  caught. Five independent reviews of this change's earlier forms found, the first, the killed `Spawner` read as gone
+  with its answer still on its core, the spawn from an `onInit()` sent by a pump of the loop, the second `Spawner`
+  waited on for ever, the engine's stop and the held timeout; the second, a second kill that ended the `Spawner`
+  early, a `Spawner` that never ended beside a core that had stopped -- it waited for its own core to have nothing
+  left to send, and an engine shut down by kills hung -- and a dead letter when a signal ended it; the third, a killed
+  caller told `unreachable` where no `Spawner` was, a refusal lost with its core read as taken by nobody, and a
+  serving `Spawner` ended by an event of an ending nobody had started; the fourth, a reading made from a timer -- in
+  the core's park, or under a pump, with no receive before its verdict -- a killed `Spawner` ended by a `DownEvent`
+  that anybody had pushed, and an answer that trusted what its wait had seen; the fifth, a `DownEvent` forwarded from
+  somebody's watch of a core counted as that core's answer, the `Spawner`'s own farewell left as a dead letter when it
+  was ended at once in the pass of its kill, and "answered once" pinned by no case: each is fixed here, with its case
+  and its mutant.
 
 - **An event a `qb::test::TestProbe` lent is no longer served twice when its asker reads late (Huly QB-57).** An
   event the probe answers with is lent until its asker acknowledges it, and the loan timed out after two seconds
